@@ -52,8 +52,9 @@ app = FastAPI(
     version="3.0.0",
 )
 
-# TRAVELER DEV PROJECT ZIP EXPORT
 app.include_router(project_export_router)
+
+# TRAVELER DEV PROJECT ZIP EXPORT
 
 # TRAVELER DEV — production project ZIP export
 # TRAVELER DEV PROJECT ZIP EXPORT
@@ -530,6 +531,34 @@ async def deploy_surge_endpoint(
         job["phase"] = "deployment_failed"
         job["error"] = str(exc)
         raise
+
+@app.get(
+    "/v1/models",
+    dependencies=[
+        Depends(require_api_key)
+    ],
+)
+async def openai_compat_models():
+    from app.config import PRIMARY_MODEL, FALLBACK_MODELS
+
+    models = []
+
+    for model_id in [PRIMARY_MODEL, *FALLBACK_MODELS]:
+        if model_id and model_id not in models:
+            models.append(model_id)
+
+    return {
+        "object": "list",
+        "data": [
+            {
+                "id": model_id,
+                "object": "model",
+                "owned_by": "traveler-dev",
+            }
+            for model_id in models
+        ],
+    }
+
 @app.post(
     "/v1/chat/completions",
     dependencies=[
