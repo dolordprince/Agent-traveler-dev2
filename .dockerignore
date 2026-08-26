@@ -1,0 +1,11 @@
+.git
+.venv
+__pycache__
+*.pyc
+.env
+agent_jobs.db
+agent_production_jobs.db
+artifacts/*
+previews/*
+logs/*
+node_modules
