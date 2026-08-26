@@ -1,0 +1,21 @@
+services:
+  - type: web
+    name: agent-traveler-dev2
+    runtime: docker
+    dockerfilePath: ./Dockerfile
+    dockerContext: .
+    plan: free
+    healthCheckPath: /health
+    envVars:
+      - key: OPENROUTER_API_KEY
+        sync: false
+      - key: GATEWAY_API_KEY
+        sync: false
+      - key: SURGE_TOKEN
+        sync: false
+      - key: PRIMARY_MODEL
+        value: anthropic/claude-sonnet-4
+      - key: GROK_MODEL
+        value: x-ai/grok-code-fast-1
+      - key: GEMINI_MODEL
+        value: google/gemini-2.5-pro
