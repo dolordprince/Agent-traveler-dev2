@@ -21,7 +21,7 @@ sleep 1
 cd "$PROJECT"
 find . -name "*.pyc" -delete 2>/dev/null || true
 find . -name "__pycache__" -exec rm -rf {} + 2>/dev/null || true
-nohup ./.venv/bin/python main.py > gateway.log 2>&1 &
+nohup bash /root/Agent-traveler-dev2/run_gateway.sh > gateway.log 2>nohup ./.venv/bin/python main.py > gateway.log 2>&11 &
 GATEWAY_PID=$!
 echo "Gateway PID: $GATEWAY_PID"
 
