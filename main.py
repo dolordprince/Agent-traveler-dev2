@@ -1,8 +1,10 @@
 import logging
+import os
 from contextlib import asynccontextmanager
 from typing import Any
 
-from fastapi import FastAPI, HTTPException
+from fastapi import FastAPI, HTTPException, Request
+from fastapi.middleware.cors import CORSMiddleware
 from pydantic import BaseModel
 
 from app.config import HOST, PORT
@@ -19,10 +21,8 @@ def stop_preview(job_id: str) -> None:
 
 @asynccontextmanager
 async def lifespan(app: FastAPI):
-    # Startup logic
     logger.info("Application startup complete.")
     yield
-    # Shutdown logic
     for job_id in list(JOBS):
         try:
             stop_preview(job_id)
@@ -31,6 +31,14 @@ async def lifespan(app: FastAPI):
 
 
 app = FastAPI(title="TRAVELER DEV Agent Gateway", lifespan=lifespan)
+
+app.add_middleware(
+    CORSMiddleware,
+    allow_origins=["*"],
+    allow_credentials=True,
+    allow_methods=["*"],
+    allow_headers=["*"],
+)
 
 
 class Message(BaseModel):
@@ -45,6 +53,25 @@ class ChatRequest(BaseModel):
     max_tokens: int | None = None
 
 
+# ─── Root & Health ────────────────────────────────────────────────────────────
+
+@app.get("/")
+async def root():
+    return {
+        "status": "ok",
+        "service": "TRAVELER DEV Agent Gateway",
+        "version": "2.0.0",
+        "endpoints": [
+            "/health",
+            "/v1/chat/completions",
+            "/v1/vercel/chat/completions",
+            "/v1/kilo/chat/completions",
+            "/v1/kilo/models",
+            "/v1/gemini/chat/completions",
+        ]
+    }
+
+
 @app.get("/health")
 async def health_check():
     return {
@@ -53,6 +80,8 @@ async def health_check():
         **provider_status(),
     }
 
+
+# ─── Core Chat ────────────────────────────────────────────────────────────────
 
 @app.post("/v1/chat/completions")
 async def chat_completions(request: ChatRequest):
@@ -85,10 +114,10 @@ async def chat_completions(request: ChatRequest):
         raise HTTPException(status_code=500, detail=str(exc))
 
 
+# ─── Vercel Proxy ─────────────────────────────────────────────────────────────
 
 @app.post("/v1/vercel/chat/completions")
 async def vercel_chat_proxy(request: Request):
-    """Proxy to Vercel AI Gateway — no auth required on this side."""
     from app.providers import _vercel_chat
     body = await request.json()
     messages = body.get("messages", [])
@@ -106,13 +135,13 @@ async def vercel_chat_proxy(request: Request):
             }],
         }
     except Exception as exc:
-        from fastapi import HTTPException
         raise HTTPException(status_code=500, detail=str(exc))
 
 
+# ─── Kilo Proxy ───────────────────────────────────────────────────────────────
+
 @app.post("/v1/kilo/chat/completions")
 async def kilo_chat_proxy(request: Request):
-    """Proxy to Kilo AI Gateway — OpenAI-compatible, no auth on this side."""
     from app.providers import _kilo_chat
     body = await request.json()
     messages = body.get("messages", [])
@@ -130,13 +159,11 @@ async def kilo_chat_proxy(request: Request):
             }],
         }
     except Exception as exc:
-        from fastapi import HTTPException
         raise HTTPException(status_code=500, detail=str(exc))
 
 
 @app.get("/v1/kilo/models")
 async def kilo_models():
-    """List models available via Kilo AI Gateway."""
     import httpx
     from app.config import KILO_API_KEY
     key = os.environ.get("KILO_API_KEY", "") or KILO_API_KEY
@@ -149,6 +176,8 @@ async def kilo_models():
         )
     return resp.json() if resp.status_code == 200 else {"error": resp.text[:200]}
 
+
+# ─── Gemini Proxy ─────────────────────────────────────────────────────────────
 
 @app.post("/v1/gemini/chat/completions")
 async def gemini_chat_proxy(request: Request):
@@ -169,8 +198,8 @@ async def gemini_chat_proxy(request: Request):
             }],
         }
     except Exception as exc:
-        from fastapi import HTTPException
         raise HTTPException(status_code=500, detail=str(exc))
+
 
 if __name__ == "__main__":
     import uvicorn
