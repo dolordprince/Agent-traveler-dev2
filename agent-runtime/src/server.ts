@@ -1,102 +1,120 @@
 import 'dotenv/config';
-import http from 'node:http';
-import { createAgentUIStreamResponse } from 'ai';
-import { createTravelerAgent } from './agent.js';
 
-const port = Number(process.env.AGENT_RUNTIME_PORT || 8787);
+import {
+  createServer,
+  type IncomingMessage,
+  type ServerResponse,
+} from 'node:http';
 
-const server = http.createServer(async (req, res) => {
+import {
+  getAgentRuntimeStatus,
+  runTravelerAgent,
+  type AgentRequest,
+} from './agent.js';
+
+const PORT = Number(process.env.PORT || 8090);
+
+function sendJson(
+  response: ServerResponse,
+  status: number,
+  payload: unknown,
+): void {
+  response.statusCode = status;
+  response.setHeader('content-type', 'application/json; charset=utf-8');
+  response.end(JSON.stringify(payload));
+}
+
+async function readBody(request: IncomingMessage): Promise<string> {
+  const chunks: Buffer[] = [];
+  for await (const chunk of request) {
+    chunks.push(
+      Buffer.isBuffer(chunk) ? chunk : Buffer.from(chunk),
+    );
+  }
+  return Buffer.concat(chunks).toString('utf8');
+}
+
+const server = createServer(async (request, response) => {
   try {
-    if (req.method === 'GET' && req.url === '/health') {
-      res.writeHead(200, {
-        'content-type': 'application/json'
-      });
+    const method = request.method || 'GET';
+    const url = new URL(
+      request.url || '/',
+      `http://${request.headers.host || '127.0.0.1'}`,
+    );
 
-      res.end(JSON.stringify({
+    if (
+      method === 'GET' &&
+      (url.pathname === '/health' || url.pathname === '/api/health')
+    ) {
+      sendJson(response, 200, {
         status: 'ok',
-        service: 'traveler-dev-vercel-agent',
-        provider: 'vercel-ai-gateway',
-        primary_model:
-          process.env.AGENT_PRIMARY_MODEL ||
-          'anthropic/claude-sonnet-4.5'
-      }));
+        service: 'traveler-dev-agent-runtime',
+        ...getAgentRuntimeStatus(),
+      });
+      return;
+    }
 
+    if (method === 'GET' && url.pathname === '/api/config') {
+      sendJson(response, 200, {
+        status: 'ok',
+        ...getAgentRuntimeStatus(),
+      });
       return;
     }
 
     if (
-      req.method === 'POST' &&
-      req.url === '/api/agent'
+      method === 'POST' &&
+      (url.pathname === '/api/agent/run' || url.pathname === '/agent/run')
     ) {
-      const chunks: Buffer[] = [];
+      const rawBody = await readBody(request);
+      const body = JSON.parse(rawBody || '{}') as {
+        prompt?: unknown;
+        message?: unknown;
+        messages?: unknown;
+        maxSteps?: unknown;
+      };
 
-      for await (const chunk of req) {
-        chunks.push(Buffer.from(chunk));
+      const prompt =
+        typeof body.prompt === 'string'
+          ? body.prompt
+          : typeof body.message === 'string'
+          ? body.message
+          : '';
+
+      const agentReq: AgentRequest = {
+        prompt: prompt.trim() ? prompt : undefined,
+        messages: Array.isArray(body.messages) ? body.messages : undefined,
+        maxSteps:
+          typeof body.maxSteps === 'number' ? body.maxSteps : undefined,
+      };
+
+      if (!agentReq.prompt && (!agentReq.messages || agentReq.messages.length === 0)) {
+        sendJson(response, 400, {
+          detail: 'prompt, message, or non-empty messages array is required',
+        });
+        return;
       }
 
-      const body = JSON.parse(
-        Buffer.concat(chunks).toString('utf8')
-      );
+      const result = await runTravelerAgent(agentReq);
 
-      const agent = createTravelerAgent();
-
-      const response = await createAgentUIStreamResponse({
-        agent,
-        uiMessages: body.messages || []
+      sendJson(response, 200, {
+        status: 'completed',
+        ...result,
       });
-
-      res.writeHead(
-        response.status || 200,
-        Object.fromEntries(response.headers.entries())
-      );
-
-      const stream = response.body;
-
-      if (!stream) {
-        throw new Error('Agent returned no response body');
-      }
-
-      const reader = stream.getReader();
-
-      while (true) {
-        const { done, value } = await reader.read();
-
-        if (done) break;
-
-        res.write(Buffer.from(value));
-      }
-
-      res.end();
       return;
     }
 
-    res.writeHead(404, {
-      'content-type': 'application/json'
-    });
-
-    res.end(JSON.stringify({
-      detail: 'Not Found'
-    }));
+    sendJson(response, 404, { detail: 'Not found' });
   } catch (error) {
     console.error(error);
-
-    if (!res.headersSent) {
-      res.writeHead(500, {
-        'content-type': 'application/json'
-      });
-    }
-
-    res.end(JSON.stringify({
-      detail:
-        error instanceof Error
-          ? error.message
-          : 'Agent runtime failure'
-    }));
+    sendJson(response, 500, {
+      detail: error instanceof Error ? error.message : String(error),
+    });
   }
 });
 
-server.listen(port, '0.0.0.0', () => {
+server.listen(PORT, '127.0.0.1', () => {
   console.log(
-    `TRAVELER DEV Vercel agent runtime listening on ${port}`
+    `TRAVELER DEV agent runtime listening on http://127.0.0.1:${PORT}`,
   );
 });

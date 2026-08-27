@@ -1,0 +1,187 @@
+#!/usr/bin/env bash
+set -e
+
+mkdir -p src/tools
+
+# Create src/tools/browserTools.ts
+cat << 'TS_EOF' > src/tools/browserTools.ts
+import { spawn, ChildProcess } from 'child_process';
+import { chromium, Browser, Page, ConsoleMessage, Response } from 'playwright';
+import path from 'path';
+import fs from 'fs';
+
+export interface CapturedError {
+  type: 'console_error' | 'page_error' | 'network_error';
+  message: string;
+  url?: string;
+  status?: number;
+  timestamp: string;
+}
+
+export class BrowserQAEngine {
+  private serverProcess: ChildProcess | null = null;
+  private browser: Browser | null = null;
+  private page: Page | null = null;
+  private capturedErrors: CapturedError[] = [];
+
+  // Step 1: Start Dev Server & Wait for Port Readiness
+  async startDevServer(
+    command: string,
+    cwd: string,
+    targetPort: number,
+    timeoutMs = 30000
+  ): Promise<{ success: boolean; port: number; log: string }> {
+    return new Promise((resolve) => {
+      const parts = command.split(' ');
+      let logs = '';
+
+      this.serverProcess = spawn(parts[0], parts.slice(1), {
+        cwd,
+        shell: true,
+        env: { ...process.env, PORT: String(targetPort) }
+      });
+
+      const timer = setTimeout(() => {
+        resolve({
+          success: false,
+          port: targetPort,
+          log: `Timeout waiting for server on port ${targetPort}.\n${logs}`
+        });
+      }, timeoutMs);
+
+      const checkOutput = (data: Buffer) => {
+        const str = data.toString();
+        logs += str;
+        if (str.includes(`:${targetPort}`) || str.toLowerCase().includes('ready') || str.includes('Local:')) {
+          clearTimeout(timer);
+          resolve({ success: true, port: targetPort, log: logs });
+        }
+      };
+
+      this.serverProcess.stdout?.on('data', checkOutput);
+      this.serverProcess.stderr?.on('data', (data) => {
+        logs += data.toString();
+      });
+    });
+  }
+
+  // Step 2: Launch Headless Chromium & Attach Interceptors
+  async initBrowser(): Promise<void> {
+    this.browser = await chromium.launch({ headless: true });
+    const context = await this.browser.newContext();
+    this.page = await context.newPage();
+    this.capturedErrors = [];
+
+    // Capture Console Errors
+    this.page.on('console', (msg: ConsoleMessage) => {
+      if (msg.type() === 'error') {
+        this.capturedErrors.push({
+          type: 'console_error',
+          message: msg.text(),
+          timestamp: new Date().toISOString()
+        });
+      }
+    });
+
+    // Capture Unhandled Page Errors
+    this.page.on('pageerror', (err: Error) => {
+      this.capturedErrors.push({
+        type: 'page_error',
+        message: err.message,
+        timestamp: new Date().toISOString()
+      });
+    });
+
+    // Capture HTTP 4xx/5xx Responses
+    this.page.on('response', (res: Response) => {
+      if (res.status() >= 400) {
+        this.capturedErrors.push({
+          type: 'network_error',
+          message: `HTTP ${res.status()} ${res.statusText()}`,
+          url: res.url(),
+          status: res.status(),
+          timestamp: new Date().toISOString()
+        });
+      }
+    });
+  }
+
+  // Step 3: Multi-Viewport Screenshots & Error Collection
+  async captureViewports(
+    url: string,
+    outputDir: string
+  ): Promise<{ screenshots: string[]; errors: CapturedError[] }> {
+    if (!this.page) throw new Error('Browser not initialized');
+
+    const viewports = [
+      { name: 'desktop-1440', width: 1440, height: 900 },
+      { name: 'mobile-390', width: 390, height: 844 }
+    ];
+
+    const savedPaths: string[] = [];
+    fs.mkdirSync(outputDir, { recursive: true });
+
+    for (const vp of viewports) {
+      await this.page.setViewportSize({ width: vp.width, height: vp.height });
+      await this.page.goto(url, { waitUntil: 'networkidle' });
+
+      const filePath = path.join(outputDir, `${vp.name}.png`);
+      await this.page.screenshot({ path: filePath, fullPage: true });
+      savedPaths.push(filePath);
+    }
+
+    return {
+      screenshots: savedPaths,
+      errors: this.capturedErrors
+    };
+  }
+
+  // Step 4: Cleanup Server and Browser Processes
+  async stopAll(): Promise<void> {
+    if (this.browser) await this.browser.close();
+    if (this.serverProcess) this.serverProcess.kill('SIGTERM');
+  }
+}
+TS_EOF
+
+# Create src/tools/browserToolDefinitions.ts
+cat << 'DEF_EOF' > src/tools/browserToolDefinitions.ts
+export const browserToolDefinitions = [
+  {
+    name: "browser_start_server",
+    description: "Starts background server and waits for readiness on a target port.",
+    parameters: {
+      type: "OBJECT",
+      properties: {
+        command: { type: "STRING", description: "Command to run (e.g., 'npm run dev' or 'node dist/server.js')" },
+        cwd: { type: "STRING", description: "Working directory path" },
+        port: { type: "NUMBER", description: "Port to monitor for readiness" }
+      },
+      required: ["command", "cwd", "port"]
+    }
+  },
+  {
+    name: "browser_inspect_page",
+    description: "Navigates to application URL, captures mobile/desktop screenshots, and returns all runtime console/network errors.",
+    parameters: {
+      type: "OBJECT",
+      properties: {
+        url: { type: "STRING", description: "Target URL (e.g. http://localhost:3000)" },
+        artifactsDir: { type: "STRING", description: "Path to save visual artifacts (e.g. .artifacts/screenshots)" }
+      },
+      required: ["url", "artifactsDir"]
+    }
+  },
+  {
+    name: "browser_stop_all",
+    description: "Stops active dev server background process and closes the headless browser session.",
+    parameters: {
+      type: "OBJECT",
+      properties: {},
+      required: []
+    }
+  }
+];
+DEF_EOF
+
+echo "==> Browser QA tools generated successfully in src/tools/"

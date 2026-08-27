@@ -1,0 +1,47 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width,initial-scale=1">
+  <title>Traveler Dev Browser Acceptance</title>
+</head>
+<body>
+  <main>
+    <h1>Traveler Dev Browser Acceptance</h1>
+
+    <button id="load-user" type="button">
+      Load User
+    </button>
+
+    <button id="calculate" type="button">
+      Calculate
+    </button>
+
+    <div id="status">Ready</div>
+    <div id="result"></div>
+  </main>
+
+  <script>
+    const status = document.getElementById("status");
+    const result = document.getElementById("result");
+
+    document.getElementById("load-user").addEventListener("click", () => {
+      const user = {
+        name: "Traveler Developer"
+      };
+
+      status.textContent = "User loaded";
+      result.textContent = user.name;
+    });
+
+    document.getElementById("calculate").addEventListener("click", () => {
+      const values = [10, 20, 30];
+
+      status.textContent = "Calculation complete";
+      result.textContent = String(
+        values.reduce((sum, value) => sum + value, 0)
+      );
+    });
+  </script>
+</body>
+</html>

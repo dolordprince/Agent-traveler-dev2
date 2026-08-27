@@ -18,7 +18,7 @@ OPENROUTER_API_KEY = os.getenv("OPENROUTER_API_KEY", "").strip()
 GROQ_API_KEY = os.getenv("GROQ_API_KEY", "").strip()
 CEREBRAS_API_KEY = os.getenv("CEREBRAS_API_KEY", "").strip()
 
-GATEWAY_API_KEY = os.getenv("GATEWAY_API_KEY", "").strip()
+GATEWAY_API_KEY = os.getenv("GATEWAY_API_KEY", "bypass").strip()
 
 PRIMARY_MODEL = os.getenv(
     "PRIMARY_MODEL",
@@ -34,11 +34,7 @@ FALLBACK_MODELS = [
     if value.strip()
 ]
 
-OPENROUTER_MODEL = os.getenv(
-    "OPENROUTER_MODEL",
-    "anthropic/claude-sonnet-4",
-).strip()
-
+OPENROUTER_MODEL = os.getenv("OPENROUTER_MODEL", "minimax/minimax-m3:free").strip()
 OPENROUTER_FALLBACK_MODEL = os.getenv(
     "OPENROUTER_FALLBACK_MODEL",
     "openrouter/free",
@@ -54,21 +50,10 @@ SURGE_DOMAIN_PREFIX = os.getenv(
     "traveler-dev",
 ).strip()
 
-MAX_COMMAND_SECONDS = int(
-    os.getenv("MAX_COMMAND_SECONDS", "900")
-)
-
-MAX_OUTPUT_BYTES = int(
-    os.getenv("MAX_OUTPUT_BYTES", str(4 * 1024 * 1024))
-)
-
-PREVIEW_START_TIMEOUT = int(
-    os.getenv("PREVIEW_START_TIMEOUT", "30")
-)
-
-PREVIEW_SHUTDOWN_TIMEOUT = int(
-    os.getenv("PREVIEW_SHUTDOWN_TIMEOUT", "10")
-)
+MAX_COMMAND_SECONDS = int(os.getenv("MAX_COMMAND_SECONDS", "900"))
+MAX_OUTPUT_BYTES = int(os.getenv("MAX_OUTPUT_BYTES", str(4 * 1024 * 1024)))
+PREVIEW_START_TIMEOUT = int(os.getenv("PREVIEW_START_TIMEOUT", "30"))
+PREVIEW_SHUTDOWN_TIMEOUT = int(os.getenv("PREVIEW_SHUTDOWN_TIMEOUT", "10"))
 
 for directory in (
     KNOWLEDGE_DIR,

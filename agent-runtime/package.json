@@ -1,15 +1,19 @@
 {
-  "name": "traveler-dev-vercel-agent",
+  "name": "traveler-dev-agent-runtime",
+  "version": "1.0.0",
   "private": true,
   "type": "module",
   "scripts": {
-    "agent:serve": "node server.mjs",
-    "agent:test": "node test-agent.mjs",
+    "build": "tsc",
+    "start": "node dist/server.js",
     "agent:verify": "node verify-runtime.mjs"
   },
   "dependencies": {
-    "ai": "latest",
-    "@ai-sdk/openai-compatible": "latest",
-    "zod": "latest"
+    "dotenv": "^17.2.2",
+    "playwright": "^1.62.1"
+  },
+  "devDependencies": {
+    "@types/node": "^24.3.0",
+    "typescript": "^5.9.2"
   }
 }

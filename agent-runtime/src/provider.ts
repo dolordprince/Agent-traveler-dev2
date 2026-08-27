@@ -1,34 +1,131 @@
-import { createOpenAICompatible } from '@ai-sdk/openai-compatible';
+import 'dotenv/config';
 
-const gatewayUrl =
-  process.env.VERCEL_AI_GATEWAY_BASE_URL ||
-  'https://ai-gateway.vercel.sh/v1';
-
-const gatewayKey =
-  process.env.AI_GATEWAY_API_KEY ||
-  process.env.GATEWAY_API_KEY;
-
-if (!gatewayKey) {
-  throw new Error(
-    'AI_GATEWAY_API_KEY or GATEWAY_API_KEY is required'
-  );
+export interface ChatMessage {
+  role: 'system' | 'user' | 'assistant' | 'tool';
+  content: string;
 }
 
-export const gateway = createOpenAICompatible({
-  name: 'vercel-gateway',
-  baseURL: gatewayUrl,
-  apiKey: gatewayKey,
-  includeUsage: true
-});
+export interface ToolCall {
+  id: string;
+  type: 'function';
+  function: {
+    name: string;
+    arguments: string;
+  };
+}
 
-export const PRIMARY_AGENT_MODEL =
+export interface ChatResponse {
+  id?: string;
+  model?: string;
+  content: string;
+  toolCalls: ToolCall[];
+  raw: unknown;
+}
+
+const GATEWAY_URL = (
+  process.env.TRAVELER_GATEWAY_URL ||
+  process.env.OPENROUTER_BASE_URL ||
+  'http://127.0.0.1:7860/v1'
+).replace(/\/+$/, '');
+
+const PRIMARY_MODEL =
   process.env.AGENT_PRIMARY_MODEL ||
-  'anthropic/claude-sonnet-4.5';
+  process.env.OPENROUTER_MODEL ||
+  'minimax/minimax-m3:free';
 
-export const FALLBACK_AGENT_MODELS = (
+const FALLBACK_MODELS = (
   process.env.AGENT_FALLBACK_MODELS ||
-  'openai/gpt-5.4,xai/grok-4.6'
+  process.env.OPENROUTER_FALLBACK_MODEL ||
+  'openrouter/free'
 )
   .split(',')
   .map((value) => value.trim())
   .filter(Boolean);
+
+export function getConfiguredModels(): string[] {
+  return [
+    PRIMARY_MODEL,
+    ...FALLBACK_MODELS.filter((model) => model !== PRIMARY_MODEL),
+  ];
+}
+
+export async function generateAgentText(
+  messages: ChatMessage[],
+  tools?: unknown[],
+): Promise<ChatResponse> {
+  const models = getConfiguredModels();
+  let lastError: unknown;
+
+  for (const model of models) {
+    try {
+      const response = await fetch(`${GATEWAY_URL}/chat/completions`, {
+        method: 'POST',
+        headers: {
+          'content-type': 'application/json',
+        },
+        body: JSON.stringify({
+          model,
+          messages,
+          tools,
+          tool_choice: tools?.length ? 'auto' : undefined,
+          max_tokens: Number(process.env.AGENT_MAX_TOKENS || 8192),
+          temperature: 0.1,
+        }),
+      });
+
+      const rawText = await response.text();
+      let raw: unknown;
+      try {
+        raw = JSON.parse(rawText);
+      } catch {
+        raw = rawText;
+      }
+
+      if (!response.ok) {
+        throw new Error(
+          `Gateway inference failed for ${model}: HTTP ${response.status}: ${rawText}`,
+        );
+      }
+
+      const data = raw as {
+        id?: string;
+        model?: string;
+        choices?: Array<{
+          message?: {
+            content?: string | null;
+            tool_calls?: ToolCall[];
+          };
+        }>;
+      };
+
+      const message = data.choices?.[0]?.message;
+
+      if (!message) {
+        throw new Error(
+          `Gateway returned no assistant message for ${model}.`,
+        );
+      }
+
+      return {
+        id: data.id,
+        model: data.model || model,
+        content:
+          typeof message.content === 'string'
+            ? message.content
+            : '',
+        toolCalls: Array.isArray(message.tool_calls)
+          ? message.tool_calls
+          : [],
+        raw,
+      };
+    } catch (error) {
+      lastError = error;
+    }
+  }
+
+  throw new Error(
+    `All configured coding-agent models failed. Last error: ${
+      lastError instanceof Error ? lastError.message : String(lastError)
+    }`,
+  );
+}

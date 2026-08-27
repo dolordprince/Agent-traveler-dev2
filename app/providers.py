@@ -1,6 +1,6 @@
 import json
-import os
 import logging
+import os
 from typing import Any
 
 import httpx
@@ -25,237 +25,57 @@ class ProviderError(Exception):
     pass
 
 
+def _get_credential(provider: str) -> str:
+    if provider == "groq":
+        return os.environ.get("GROQ_API_KEY", "").strip() or GROQ_API_KEY
+    if provider == "cerebras":
+        return os.environ.get("CEREBRAS_API_KEY", "").strip() or CEREBRAS_API_KEY
+    if provider == "openrouter":
+        return os.environ.get("OPENROUTER_API_KEY", "").strip() or OPENROUTER_API_KEY
+    return ""
+
+
 def _provider_for_model(model: str) -> str:
-    model = model.lower()
-
-    if model.startswith("groq/"):
+    model_lower = model.lower()
+    if model_lower.startswith("groq/"):
         return "groq"
-
-    if model.startswith("cerebras/"):
+    if model_lower.startswith("cerebras/"):
         return "cerebras"
-
-    if model.startswith("openrouter/"):
-        return "openrouter"
-
-    if model.startswith("anthropic/"):
-        return "openrouter"
-
-    if model.startswith("google/"):
-        return "openrouter"
-
-    if model.startswith("x-ai/"):
-        return "openrouter"
-
     return "openrouter"
 
 
 def provider_chain(requested_model: str | None) -> list[str]:
     if requested_model:
         return [requested_model]
-
     result = [PRIMARY_MODEL]
-
     for model in FALLBACK_MODELS:
         if model not in result:
             result.append(model)
-
-    if OPENROUTER_API_KEY:
-        for model in (
-            OPENROUTER_MODEL,
-            OPENROUTER_FALLBACK_MODEL,
-        ):
+    if _get_credential("openrouter"):
+        for model in (OPENROUTER_MODEL, OPENROUTER_FALLBACK_MODEL):
             if model and model not in result:
                 result.append(model)
-
     return result
-
-
-def _credentials_available(provider: str) -> bool:
-    if provider == "groq":
-        return bool(GROQ_API_KEY)
-
-    if provider == "cerebras":
-        return bool(CEREBRAS_API_KEY)
-
-    if provider == "openrouter":
-        return bool(OPENROUTER_API_KEY)
-
-    return False
 
 
 def _url(provider: str) -> str:
     if provider == "groq":
         return GROQ_URL
-
     if provider == "cerebras":
         return CEREBRAS_URL
-
     return OPENROUTER_URL
 
 
 def _headers(provider: str) -> dict[str, str]:
-    if provider == "groq":
-        key = GROQ_API_KEY
-    elif provider == "cerebras":
-        key = CEREBRAS_API_KEY
-    else:
-        key = OPENROUTER_API_KEY
-
+    key = _get_credential(provider)
     headers = {
         "Authorization": f"Bearer {key}",
         "Content-Type": "application/json",
     }
-
     if provider == "openrouter":
-        headers.update(
-            {
-                "HTTP-Referer": os.getenv(
-                    "TRAVELER_PUBLIC_URL",
-                    "https://traveler-dev.onrender.com",
-                ),
-                "X-Title": "TRAVELER DEV",
-            }
-        )
-
+        headers["HTTP-Referer"] = "https://traveler-dev.onrender.com"
+        headers["X-Title"] = "TRAVELER DEV"
     return headers
-
-
-async def _request(
-    provider: str,
-    model: str,
-    messages: list[dict[str, Any]],
-    temperature: float,
-    max_tokens: int,
-) -> dict[str, Any]:
-    if not _credentials_available(provider):
-        raise ProviderError(
-            f"{provider.upper()} API key is not configured."
-        )
-
-    payload = {
-        "model": model.removeprefix(f"{provider}/"),
-        "messages": messages,
-        "temperature": temperature,
-        "max_tokens": max_tokens,
-    }
-
-    timeout = httpx.Timeout(
-        connect=30.0,
-        read=180.0,
-        write=60.0,
-        pool=30.0,
-    )
-
-    async with httpx.AsyncClient(timeout=timeout) as client:
-        response = await client.post(
-            _url(provider),
-            headers=_headers(provider),
-            json=payload,
-        )
-
-    if response.status_code >= 400:
-        raise ProviderError(
-            json.dumps(
-                {
-                    "provider": provider,
-                    "model": model,
-                    "status": response.status_code,
-                    "body": response.text[:4000],
-                },
-                ensure_ascii=False,
-            )
-        )
-
-    try:
-        data = response.json()
-    except ValueError as exc:
-        raise ProviderError(
-            f"{provider} returned invalid JSON."
-        ) from exc
-
-    choices = data.get("choices") or []
-
-    if not choices:
-        raise ProviderError(
-            f"{provider} returned no choices."
-        )
-
-    message = choices[0].get("message") or {}
-    content = message.get("content")
-
-    if isinstance(content, list):
-        content = "".join(
-            item.get("text", "")
-            for item in content
-            if isinstance(item, dict)
-        )
-
-    if not isinstance(content, str) or not content.strip():
-        raise ProviderError(
-            f"{provider} returned empty assistant content."
-        )
-
-    return {
-        "provider": provider,
-        "model": model,
-        "content": content,
-        "raw": data,
-    }
-
-
-async def chat(
-    messages: list[dict[str, Any]],
-    model: str | None = None,
-    temperature: float = 0.2,
-    max_tokens: int = 16000,
-) -> dict[str, Any]:
-    errors: list[dict[str, Any]] = []
-
-    for candidate in provider_chain(model):
-        provider = _provider_for_model(candidate)
-
-        try:
-            result = await _request(
-                provider=provider,
-                model=candidate,
-                messages=messages,
-                temperature=temperature,
-                max_tokens=max_tokens,
-            )
-
-            logger.info(
-                "LLM request succeeded provider=%s model=%s",
-                provider,
-                candidate,
-            )
-
-            return result
-
-        except Exception as exc:
-            logger.warning(
-                "LLM provider failed provider=%s model=%s error=%s",
-                provider,
-                candidate,
-                exc,
-            )
-
-            errors.append(
-                {
-                    "provider": provider,
-                    "model": candidate,
-                    "error": str(exc),
-                }
-            )
-
-    raise ProviderError(
-        json.dumps(
-            {
-                "message": "All configured models failed.",
-                "attempts": errors,
-            },
-            ensure_ascii=False,
-        )
-    )
 
 
 def provider_status() -> dict[str, Any]:
@@ -263,12 +83,73 @@ def provider_status() -> dict[str, Any]:
         "primary": PRIMARY_MODEL,
         "fallbacks": FALLBACK_MODELS,
         "credentials": {
-            "groq": bool(GROQ_API_KEY),
-            "cerebras": bool(CEREBRAS_API_KEY),
-            "openrouter": bool(OPENROUTER_API_KEY),
+            "groq": bool(_get_credential("groq")),
+            "cerebras": bool(_get_credential("cerebras")),
+            "openrouter": bool(_get_credential("openrouter")),
         },
         "openrouter": {
             "model": OPENROUTER_MODEL,
             "fallback_model": OPENROUTER_FALLBACK_MODEL,
         },
     }
+
+
+async def chat(
+    messages: list[dict[str, Any]],
+    model: str | None = None,
+    temperature: float = 0.2,
+    max_tokens: int | None = None,
+    **kwargs: Any,
+) -> dict[str, Any]:
+    models_to_try = provider_chain(model)
+    last_error: Exception | None = None
+
+    async with httpx.AsyncClient(timeout=120.0) as client:
+        for target_model in models_to_try:
+            provider = _provider_for_model(target_model)
+            key = _get_credential(provider)
+
+            if not key:
+                logger.warning(f"Skipping provider {provider} for model {target_model}: missing API key")
+                last_error = ProviderError(f"Missing API key for provider '{provider}'")
+                continue
+
+            clean_model = target_model.split("/", 1)[1] if "/" in target_model and provider in ("groq", "cerebras") else target_model
+
+            payload: dict[str, Any] = {
+                "model": clean_model,
+                "messages": messages,
+                "temperature": temperature,
+            }
+            if max_tokens is not None:
+                payload["max_tokens"] = max_tokens
+
+            try:
+                response = await client.post(
+                    _url(provider),
+                    headers=_headers(provider),
+                    json=payload,
+                )
+
+                if response.status_code == 200:
+                    data = response.json()
+                    choices = data.get("choices", [])
+                    if choices and "message" in choices[0]:
+                        return {
+                            "id": data.get("id", ""),
+                            "model": target_model,
+                            "content": choices[0]["message"].get("content", ""),
+                            "choices": choices,
+                            "usage": data.get("usage", {}),
+                        }
+                    raise ProviderError(f"Invalid choice payload structure from provider {provider}")
+
+                error_text = response.text
+                logger.error(f"Provider {provider} ({target_model}) failed with HTTP {response.status_code}: {error_text}")
+                last_error = ProviderError(f"Provider {provider} HTTP {response.status_code}: {error_text}")
+
+            except httpx.RequestError as exc:
+                logger.error(f"Network error calling provider {provider}: {exc}")
+                last_error = exc
+
+    raise ProviderError(f"All configured providers failed. Last error: {last_error}")

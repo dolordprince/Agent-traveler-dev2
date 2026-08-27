@@ -1,0 +1,15 @@
+{
+  "name": "traveler-dev-vercel-agent",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "agent:serve": "node server.mjs",
+    "agent:test": "node test-agent.mjs",
+    "agent:verify": "node verify-runtime.mjs"
+  },
+  "dependencies": {
+    "ai": "latest",
+    "@ai-sdk/openai-compatible": "latest",
+    "zod": "latest"
+  }
+}
