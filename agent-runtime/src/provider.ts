@@ -129,3 +129,68 @@ export async function generateAgentText(
     }`,
   );
 }
+
+// ── Kilo AI Gateway (alternative provider) ───────────────────────────────────
+const KILO_BASE_URL = process.env.KILO_GATEWAY_URL
+  ? process.env.KILO_GATEWAY_URL.replace('/chat/completions', '')
+  : 'https://api.kilo.ai/api/gateway';
+
+export async function generateWithKilo(
+  messages: ChatMessage[],
+  model = 'anthropic/claude-sonnet-4-6',
+): Promise<ChatResponse> {
+  const key = process.env.KILO_API_KEY || '';
+  if (!key) throw new Error('KILO_API_KEY not set');
+
+  const res = await fetch(`${KILO_BASE_URL}/chat/completions`, {
+    method: 'POST',
+    headers: {
+      'Authorization': `Bearer ${key}`,
+      'Content-Type': 'application/json',
+    },
+    body: JSON.stringify({ model, messages, max_tokens: 4096 }),
+  });
+
+  const text = await res.text();
+  if (!res.ok) throw new Error(`Kilo error ${res.status}: ${text.slice(0, 300)}`);
+
+  const data = JSON.parse(text) as {
+    id?: string;
+    model?: string;
+    choices?: Array<{ message?: { content?: string } }>;
+  };
+  const content = data.choices?.[0]?.message?.content ?? '';
+  return { id: data.id, model: data.model || model, content, toolCalls: [], raw: data };
+}
+
+// ── Google Gemini provider ────────────────────────────────────────────────────
+export async function generateWithGemini(
+  messages: ChatMessage[],
+  model = 'gemini-3.6-flash',
+): Promise<ChatResponse> {
+  const key = process.env.GEMINI_API_KEY || '';
+  if (!key) throw new Error('GEMINI_API_KEY not set');
+
+  const res = await fetch(
+    'https://generativelanguage.googleapis.com/v1beta/openai/chat/completions',
+    {
+      method: 'POST',
+      headers: {
+        'Authorization': `Bearer ${key}`,
+        'Content-Type': 'application/json',
+      },
+      body: JSON.stringify({ model, messages, max_tokens: 4096 }),
+    },
+  );
+
+  const text = await res.text();
+  if (!res.ok) throw new Error(`Gemini error ${res.status}: ${text.slice(0, 300)}`);
+
+  const data = JSON.parse(text) as {
+    id?: string;
+    model?: string;
+    choices?: Array<{ message?: { content?: string } }>;
+  };
+  const content = data.choices?.[0]?.message?.content ?? '';
+  return { id: data.id, model: data.model || model, content, toolCalls: [], raw: data };
+}

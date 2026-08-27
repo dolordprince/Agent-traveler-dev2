@@ -432,6 +432,226 @@ export const TOOL_DEFINITIONS = [
     },
   },
 
+
+  {
+    type: 'function',
+    function: {
+      name: 'publish_to_surge',
+      description: 'Publish a built website directory to Surge.sh and return a live public URL. Requires SURGE_TOKEN env var.',
+      parameters: {
+        type: 'object',
+        properties: {
+          directory: { type: 'string', description: 'Workspace-relative path to the built site directory.' },
+          domain: { type: 'string', description: 'Optional custom surge.sh subdomain e.g. my-app.surge.sh' },
+        },
+        required: ['directory'],
+      },
+    },
+  },
+  {
+    type: 'function',
+    function: {
+      name: 'create_download_archive',
+      description: 'Zip a workspace directory so the user can download it.',
+      parameters: {
+        type: 'object',
+        properties: {
+          directory: { type: 'string', description: 'Workspace-relative directory to archive.' },
+          outputName: { type: 'string', description: 'Output zip filename (no path, stays in workspace).' },
+        },
+        required: ['directory', 'outputName'],
+      },
+    },
+  },
+  {
+    type: 'function',
+    function: {
+      name: 'get_preview_url',
+      description: 'Get the current preview URL of the supervised application.',
+      parameters: { type: 'object', properties: {} },
+    },
+  },
+
+
+  {
+    type: 'function',
+    function: {
+      name: 'git_clone',
+      description: 'Clone a GitHub repository into the workspace.',
+      parameters: {
+        type: 'object',
+        properties: {
+          url: { type: 'string', description: 'GitHub repo URL to clone.' },
+          directory: { type: 'string', description: 'Workspace-relative target directory.' },
+        },
+        required: ['url', 'directory'],
+      },
+    },
+  },
+  {
+    type: 'function',
+    function: {
+      name: 'git_pull',
+      description: 'Pull latest changes in a workspace git repository.',
+      parameters: {
+        type: 'object',
+        properties: {
+          directory: { type: 'string', description: 'Workspace-relative repo directory.' },
+        },
+        required: ['directory'],
+      },
+    },
+  },
+  {
+    type: 'function',
+    function: {
+      name: 'git_push',
+      description: 'Stage all changes, commit, and push to origin.',
+      parameters: {
+        type: 'object',
+        properties: {
+          directory: { type: 'string', description: 'Workspace-relative repo directory.' },
+          message: { type: 'string', description: 'Commit message.' },
+          branch: { type: 'string', description: 'Branch to push to. Default: main.' },
+        },
+        required: ['directory', 'message'],
+      },
+    },
+  },
+  {
+    type: 'function',
+    function: {
+      name: 'git_status',
+      description: 'Get git status and recent log of a workspace repository.',
+      parameters: {
+        type: 'object',
+        properties: {
+          directory: { type: 'string', description: 'Workspace-relative repo directory.' },
+        },
+        required: ['directory'],
+      },
+    },
+  },
+  {
+    type: 'function',
+    function: {
+      name: 'git_delete_and_reclone',
+      description: 'Delete a workspace directory and re-clone the repository fresh.',
+      parameters: {
+        type: 'object',
+        properties: {
+          url: { type: 'string', description: 'GitHub repo URL.' },
+          directory: { type: 'string', description: 'Workspace-relative directory to wipe and reclone.' },
+        },
+        required: ['url', 'directory'],
+      },
+    },
+  },
+  {
+    type: 'function',
+    function: {
+      name: 'github_get_repo_url',
+      description: 'Get the remote origin URL of a workspace git repository.',
+      parameters: {
+        type: 'object',
+        properties: {
+          directory: { type: 'string', description: 'Workspace-relative repo directory.' },
+        },
+        required: ['directory'],
+      },
+    },
+  },
+
+
+  {
+    type: 'function',
+    function: {
+      name: 'git_clone',
+      description: 'Clone a GitHub repository into the workspace.',
+      parameters: {
+        type: 'object',
+        properties: {
+          url: { type: 'string', description: 'GitHub repo URL to clone.' },
+          directory: { type: 'string', description: 'Workspace-relative target directory.' },
+        },
+        required: ['url', 'directory'],
+      },
+    },
+  },
+  {
+    type: 'function',
+    function: {
+      name: 'git_pull',
+      description: 'Pull latest changes in a workspace git repository.',
+      parameters: {
+        type: 'object',
+        properties: {
+          directory: { type: 'string', description: 'Workspace-relative repo directory.' },
+        },
+        required: ['directory'],
+      },
+    },
+  },
+  {
+    type: 'function',
+    function: {
+      name: 'git_push',
+      description: 'Stage all changes, commit, and push to origin.',
+      parameters: {
+        type: 'object',
+        properties: {
+          directory: { type: 'string', description: 'Workspace-relative repo directory.' },
+          message: { type: 'string', description: 'Commit message.' },
+          branch: { type: 'string', description: 'Branch to push to. Default: main.' },
+        },
+        required: ['directory', 'message'],
+      },
+    },
+  },
+  {
+    type: 'function',
+    function: {
+      name: 'git_status',
+      description: 'Get git status and recent log of a workspace repository.',
+      parameters: {
+        type: 'object',
+        properties: {
+          directory: { type: 'string', description: 'Workspace-relative repo directory.' },
+        },
+        required: ['directory'],
+      },
+    },
+  },
+  {
+    type: 'function',
+    function: {
+      name: 'git_delete_and_reclone',
+      description: 'Delete a workspace directory and re-clone the repository fresh.',
+      parameters: {
+        type: 'object',
+        properties: {
+          url: { type: 'string', description: 'GitHub repo URL.' },
+          directory: { type: 'string', description: 'Workspace-relative directory to wipe and reclone.' },
+        },
+        required: ['url', 'directory'],
+      },
+    },
+  },
+  {
+    type: 'function',
+    function: {
+      name: 'github_get_repo_url',
+      description: 'Get the remote origin URL of a workspace git repository.',
+      parameters: {
+        type: 'object',
+        properties: {
+          directory: { type: 'string', description: 'Workspace-relative repo directory.' },
+        },
+        required: ['directory'],
+      },
+    },
+  },
+
 ];
 
 export async function readFile(relativePath: string): Promise<string> {
@@ -656,6 +876,146 @@ async function callBrowserBridge(
   }
 }
 
+
+// ── Surge publish ─────────────────────────────────────────────────────────────
+let _previewPort: number | null = null;
+let _previewUrl: string | null = null;
+
+export function setPreviewUrl(url: string, port: number): void {
+  _previewUrl = url;
+  _previewPort = port;
+}
+
+export async function publishToSurge(
+  directory: string,
+  domain?: string,
+): Promise<{ url: string; domain: string }> {
+  const safeDir = resolveWorkspace(directory);
+  const surgeToken = process.env.SURGE_TOKEN || '';
+  if (!surgeToken) {
+    throw new Error('SURGE_TOKEN environment variable is not set. Add it to .env');
+  }
+  const ts = Date.now();
+  const targetDomain = domain || `traveler-dev-${ts}.surge.sh`;
+  const result = await runCommand('npx', [
+    'surge', '--project', safeDir,
+    '--domain', targetDomain,
+    '--token', surgeToken,
+  ]);
+  if ((result as any).exitCode !== 0) {
+    throw new Error(`Surge publish failed: ${result.stderr.slice(0, 400)}`);
+  }
+  return { url: `https://${targetDomain}`, domain: targetDomain };
+}
+
+export async function createDownloadArchive(
+  directory: string,
+  outputName: string,
+): Promise<{ path: string; size: number }> {
+  const safeDir = resolveWorkspace(directory);
+  const safeName = outputName.replace(/[^a-zA-Z0-9_.-]/g, '_');
+  const outPath = resolveWorkspace(safeName.endsWith('.zip') ? safeName : safeName + '.zip');
+  const result = await runCommand('python3', [
+    '-c',
+    `import shutil, os; shutil.make_archive(${JSON.stringify(outPath.replace(/\.zip$/, ''))}, 'zip', ${JSON.stringify(safeDir)})`,
+  ]);
+  if ((result as any).exitCode !== 0) {
+    throw new Error(`Archive creation failed: ${result.stderr.slice(0, 400)}`);
+  }
+  const { size } = await import('fs').then(fs => fs.promises.stat(outPath));
+  return { path: outPath, size };
+}
+
+
+// ── GitHub / Git tools ────────────────────────────────────────────────────────
+async function gitRun(
+  args: string[],
+  cwd: string,
+): Promise<{ out: string; err: string; ok: boolean }> {
+  const r = await runCommand('git', args);
+  return {
+    out: r.stdout,
+    err: r.stderr,
+    ok: (r as any).exitCode === 0,
+  };
+}
+
+export async function gitClone(
+  url: string,
+  directory: string,
+): Promise<{ success: boolean; path: string; output: string }> {
+  const safeDir = resolveWorkspace(directory);
+  const r = await runCommand('git', ['clone', url, safeDir]);
+  const ok = (r as any).exitCode === 0;
+  return { success: ok, path: safeDir, output: (ok ? r.stdout : r.stderr).slice(0, 800) };
+}
+
+export async function gitPull(
+  directory: string,
+): Promise<{ success: boolean; output: string }> {
+  const safeDir = resolveWorkspace(directory);
+  const r = await runCommand('git', ['-C', safeDir, 'pull']);
+  const ok = (r as any).exitCode === 0;
+  return { success: ok, output: (ok ? r.stdout : r.stderr).slice(0, 800) };
+}
+
+export async function gitPush(
+  directory: string,
+  message: string,
+  branch: string = 'main',
+): Promise<{ success: boolean; output: string }> {
+  const safeDir = resolveWorkspace(directory);
+  const steps = [
+    ['git', '-C', safeDir, 'add', '-A'],
+    ['git', '-C', safeDir, 'commit', '-m', message],
+    ['git', '-C', safeDir, 'push', 'origin', branch],
+  ];
+  let output = '';
+  for (const [cmd, ...args] of steps) {
+    const r = await runCommand(cmd, args);
+    output += r.stdout + r.stderr;
+    const ok = (r as any).exitCode === 0;
+    if (!ok && !r.stderr.includes('nothing to commit')) {
+      return { success: false, output: output.slice(0, 1000) };
+    }
+  }
+  return { success: true, output: output.slice(0, 1000) };
+}
+
+export async function gitStatus(
+  directory: string,
+): Promise<{ status: string; log: string }> {
+  const safeDir = resolveWorkspace(directory);
+  const s = await runCommand('git', ['-C', safeDir, 'status']);
+  const l = await runCommand('git', ['-C', safeDir, 'log', '--oneline', '-10']);
+  return {
+    status: s.stdout.slice(0, 800),
+    log: l.stdout.slice(0, 800),
+  };
+}
+
+export async function gitDeleteAndReclone(
+  url: string,
+  directory: string,
+): Promise<{ success: boolean; path: string; output: string }> {
+  const safeDir = resolveWorkspace(directory);
+  const rm = await runCommand('python3', [
+    '-c',
+    `import shutil, os; shutil.rmtree(${JSON.stringify(safeDir)}, ignore_errors=True)`,
+  ]);
+  return await gitClone(url, directory);
+}
+
+export async function githubGetRepoUrl(
+  directory: string,
+): Promise<{ url: string }> {
+  const safeDir = resolveWorkspace(directory);
+  const r = await runCommand('git', ['-C', safeDir, 'remote', 'get-url', 'origin']);
+  return { url: r.stdout.trim() };
+}
+
+
+// ── GitHub / Git tools ─────────────────────────────────────────────────────
 export async function executeTool(
   name: string,
   input: unknown,
@@ -690,7 +1050,46 @@ export async function executeTool(
       return await runCommand(command, commandArgs);
     }
     
-case 'browser_navigate':
+case 'git_clone': {
+      const v = input as Record<string, unknown>;
+      return await gitClone(String(v.url), String(v.directory));
+    }
+    case 'git_pull': {
+      const v = input as Record<string, unknown>;
+      return await gitPull(String(v.directory));
+    }
+    case 'git_push': {
+      const v = input as Record<string, unknown>;
+      return await gitPush(String(v.directory), String(v.message), String(v.branch || 'main'));
+    }
+    case 'git_status': {
+      const v = input as Record<string, unknown>;
+      return await gitStatus(String(v.directory));
+    }
+    case 'git_delete_and_reclone': {
+      const v = input as Record<string, unknown>;
+      return await gitDeleteAndReclone(String(v.url), String(v.directory));
+    }
+    case 'github_get_repo_url': {
+      const v = input as Record<string, unknown>;
+      return await githubGetRepoUrl(String(v.directory));
+    }
+    case 'publish_to_surge': {
+      const dir = String((input as Record<string,unknown>)?.directory || '.');
+      const dom = (input as Record<string,unknown>)?.domain as string | undefined;
+      return await publishToSurge(dir, dom);
+    }
+
+    case 'create_download_archive': {
+      const v = input as Record<string,unknown>;
+      return await createDownloadArchive(String(v.directory || '.'), String(v.outputName || 'download.zip'));
+    }
+
+    case 'get_preview_url': {
+      return { url: _previewUrl, port: _previewPort, available: _previewUrl !== null };
+    }
+
+    case 'browser_navigate':
     case 'browser_click':
     case 'browser_fill':
     case 'browser_get_page_state':

@@ -98,7 +98,6 @@ const server = createServer(async (request, response) => {
       const result = await runTravelerAgent(agentReq);
 
       sendJson(response, 200, {
-        status: 'completed',
         ...result,
       });
       return;

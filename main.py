@@ -85,6 +85,93 @@ async def chat_completions(request: ChatRequest):
         raise HTTPException(status_code=500, detail=str(exc))
 
 
+
+@app.post("/v1/vercel/chat/completions")
+async def vercel_chat_proxy(request: Request):
+    """Proxy to Vercel AI Gateway — no auth required on this side."""
+    from app.providers import _vercel_chat
+    body = await request.json()
+    messages = body.get("messages", [])
+    model = body.get("model", None)
+    try:
+        result = await _vercel_chat(messages, model)
+        return {
+            "id": "vercel-proxy",
+            "object": "chat.completion",
+            "model": result["model"],
+            "choices": [{
+                "index": 0,
+                "message": {"role": "assistant", "content": result["content"]},
+                "finish_reason": "stop",
+            }],
+        }
+    except Exception as exc:
+        from fastapi import HTTPException
+        raise HTTPException(status_code=500, detail=str(exc))
+
+
+@app.post("/v1/kilo/chat/completions")
+async def kilo_chat_proxy(request: Request):
+    """Proxy to Kilo AI Gateway — OpenAI-compatible, no auth on this side."""
+    from app.providers import _kilo_chat
+    body = await request.json()
+    messages = body.get("messages", [])
+    model = body.get("model", None)
+    try:
+        result = await _kilo_chat(messages, model)
+        return {
+            "id": "kilo-proxy",
+            "object": "chat.completion",
+            "model": result["model"],
+            "choices": [{
+                "index": 0,
+                "message": {"role": "assistant", "content": result["content"]},
+                "finish_reason": "stop",
+            }],
+        }
+    except Exception as exc:
+        from fastapi import HTTPException
+        raise HTTPException(status_code=500, detail=str(exc))
+
+
+@app.get("/v1/kilo/models")
+async def kilo_models():
+    """List models available via Kilo AI Gateway."""
+    import httpx
+    from app.config import KILO_API_KEY
+    key = os.environ.get("KILO_API_KEY", "") or KILO_API_KEY
+    if not key:
+        return {"error": "KILO_API_KEY not configured"}
+    async with httpx.AsyncClient(timeout=10) as client:
+        resp = await client.get(
+            "https://api.kilo.ai/api/gateway/models",
+            headers={"Authorization": f"Bearer {key}"},
+        )
+    return resp.json() if resp.status_code == 200 else {"error": resp.text[:200]}
+
+
+@app.post("/v1/gemini/chat/completions")
+async def gemini_chat_proxy(request: Request):
+    from app.providers import _gemini_chat
+    body = await request.json()
+    messages = body.get("messages", [])
+    model = body.get("model", "gemini-2.5-flash")
+    try:
+        result = await _gemini_chat(messages, model)
+        return {
+            "id": "gemini-proxy",
+            "object": "chat.completion",
+            "model": result["model"],
+            "choices": [{
+                "index": 0,
+                "message": {"role": "assistant", "content": result["content"]},
+                "finish_reason": "stop",
+            }],
+        }
+    except Exception as exc:
+        from fastapi import HTTPException
+        raise HTTPException(status_code=500, detail=str(exc))
+
 if __name__ == "__main__":
     import uvicorn
     uvicorn.run("main:app", host=HOST, port=PORT, reload=False)

@@ -6,6 +6,15 @@ from typing import Any
 import httpx
 
 from .config import (
+    GEMINI_API_KEY,
+    GEMINI_URL,
+    GEMINI_MODEL,
+    KILO_API_KEY,
+    KILO_GATEWAY_URL,
+    KILO_MODEL,
+    AI_GATEWAY_API_KEY,
+    VERCEL_GATEWAY_URL,
+    VERCEL_GATEWAY_MODEL,
     CEREBRAS_API_KEY,
     CEREBRAS_URL,
     FALLBACK_MODELS,
@@ -30,7 +39,9 @@ def _get_credential(provider: str) -> str:
         return os.environ.get("GROQ_API_KEY", "").strip() or GROQ_API_KEY
     if provider == "cerebras":
         return os.environ.get("CEREBRAS_API_KEY", "").strip() or CEREBRAS_API_KEY
-    if provider == "openrouter":
+    if provider == "vercel":
+        key = os.environ.get("AI_GATEWAY_API_KEY", "") or AI_GATEWAY_API_KEY
+    elif provider == "openrouter":
         return os.environ.get("OPENROUTER_API_KEY", "").strip() or OPENROUTER_API_KEY
     return ""
 
@@ -72,7 +83,9 @@ def _headers(provider: str) -> dict[str, str]:
         "Authorization": f"Bearer {key}",
         "Content-Type": "application/json",
     }
-    if provider == "openrouter":
+    if provider == "vercel":
+        key = os.environ.get("AI_GATEWAY_API_KEY", "") or AI_GATEWAY_API_KEY
+    elif provider == "openrouter":
         headers["HTTP-Referer"] = "https://traveler-dev.onrender.com"
         headers["X-Title"] = "TRAVELER DEV"
     return headers
@@ -94,7 +107,124 @@ def provider_status() -> dict[str, Any]:
     }
 
 
+
+async def _vercel_chat(
+    messages: list[dict],
+    model: str | None = None,
+) -> dict:
+    """Call Vercel AI Gateway with OpenAI-compatible payload."""
+    import httpx
+
+    target_model = model or VERCEL_GATEWAY_MODEL
+    key = os.environ.get("AI_GATEWAY_API_KEY", "") or AI_GATEWAY_API_KEY
+
+    if not key:
+        raise ValueError("AI_GATEWAY_API_KEY is not configured")
+
+    async with httpx.AsyncClient(timeout=120) as client:
+        resp = await client.post(
+            VERCEL_GATEWAY_URL,
+            headers={
+                "Authorization": f"Bearer {key}",
+                "Content-Type": "application/json",
+            },
+            json={
+                "model": target_model,
+                "messages": messages,
+                "max_tokens": 4096,
+            },
+        )
+
+    if resp.status_code != 200:
+        raise ValueError(
+            f"Vercel gateway error {resp.status_code}: {resp.text[:400]}"
+        )
+
+    data = resp.json()
+    content = data.get("choices", [{}])[0].get("message", {}).get("content", "")
+    return {"content": content, "model": target_model, "raw": data}
+
+
+async def _kilo_chat(
+    messages: list[dict],
+    model: str | None = None,
+) -> dict:
+    """Call Kilo AI Gateway — OpenAI-compatible, hundreds of models."""
+    import httpx
+
+    target = model or KILO_MODEL
+    key = os.environ.get("KILO_API_KEY", "") or KILO_API_KEY
+
+    if not key:
+        raise ValueError("KILO_API_KEY is not configured")
+
+    async with httpx.AsyncClient(timeout=120) as client:
+        resp = await client.post(
+            KILO_GATEWAY_URL,
+            headers={
+                "Authorization": f"Bearer {key}",
+                "Content-Type": "application/json",
+            },
+            json={
+                "model": target,
+                "messages": messages,
+                "max_tokens": 4096,
+            },
+        )
+
+    if resp.status_code != 200:
+        raise ValueError(f"Kilo gateway error {resp.status_code}: {resp.text[:400]}")
+
+    data = resp.json()
+    content_text = data.get("choices", [{}])[0].get("message", {}).get("content", "")
+    return {"content": content_text, "model": target, "raw": data}
+
+
+async def _gemini_chat(
+    messages: list[dict],
+    model: str | None = None,
+) -> dict:
+    """Call Google Gemini via OpenAI-compatible endpoint. Free tier available."""
+    import httpx
+
+    target = model or GEMINI_MODEL
+    key = os.environ.get("GEMINI_API_KEY", "") or GEMINI_API_KEY
+
+    if not key:
+        raise ValueError("GEMINI_API_KEY is not configured")
+
+    async with httpx.AsyncClient(timeout=120) as client:
+        resp = await client.post(
+            GEMINI_URL,
+            headers={
+                "Authorization": f"Bearer {key}",
+                "Content-Type": "application/json",
+            },
+            json={
+                "model": target,
+                "messages": messages,
+                "max_tokens": 4096,
+            },
+        )
+
+    if resp.status_code != 200:
+        raise ValueError(f"Gemini error {resp.status_code}: {resp.text[:400]}")
+
+    data = resp.json()
+    text = data.get("choices", [{}])[0].get("message", {}).get("content", "")
+    return {"content": text, "model": target, "raw": data}
+
+
 async def chat(
+    # ── Try Gemini first (free tier, fast) ────────────────────────────────────
+    import os as _os
+    _gemini_key = _os.environ.get("GEMINI_API_KEY", "") or GEMINI_API_KEY
+    if _gemini_key:
+        try:
+            return await _gemini_chat(messages, "gemini-3.6-flash")
+        except Exception as _ge:
+            pass  # Fall through to configured providers
+    # ────────────────────────────────────────────────────────────────────────
     messages: list[dict[str, Any]],
     model: str | None = None,
     temperature: float = 0.2,

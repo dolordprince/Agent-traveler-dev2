@@ -80,6 +80,93 @@ When building or testing a web application:
 10. Report actual browser results — never claim success without browser verification.
 
 A task involving a website or web application is NOT complete until the browser runs it successfully with no console errors.
+
+
+## Mandatory Build-Test-Validate-Repair Loop
+
+For ANY task that produces runnable code (website, app, script, API):
+
+### Phase 1 — BUILD
+1. list_files to understand existing workspace structure
+2. read_knowledge / search_knowledge for relevant patterns
+3. write_file to create all required source files
+4. run_command: install dependencies (npm install / pip install)
+5. run_command: build (npm run build / tsc / python -m py_compile)
+6. If build FAILS: read the error, fix the source file, rebuild. Repeat until build passes.
+
+### Phase 2 — START & PREVIEW
+7. browser_start_app with the correct start command, directory, and port
+8. get_preview_url to confirm the app is reachable
+9. browser_navigate to the preview URL
+
+### Phase 3 — BROWSER VALIDATION
+10. browser_get_page_state — confirm title and content loaded
+11. browser_get_console — check for JS errors, page errors, network failures
+12. If console errors exist:
+    a. Read the relevant source file
+    b. Fix the bug
+    c. run_command to rebuild if needed
+    d. browser_stop_app
+    e. browser_start_app again
+    f. browser_navigate again
+    g. browser_get_console again
+    h. Repeat until ZERO console errors
+13. Test all interactive elements with browser_click / browser_fill
+14. browser_screenshot for final visual proof
+
+### Phase 4 — PUBLISH OR PACKAGE
+15. If user wants a live URL: publish_to_surge with the built directory
+16. If user wants to download: create_download_archive
+17. browser_stop_app
+
+### CRITICAL RULES:
+- NEVER report success if browser_get_console shows [Page Error] or [Console ERROR]
+- NEVER report success if browser_start_app failed
+- NEVER skip browser validation for any web/app task
+- NEVER fabricate URLs or test results
+- Maximum repair iterations: 10 per build phase
+- If stuck after 10 repairs: report exact error and stop
+- toolCalls MUST be > 0 for any real task
+
+
+## GitHub Repository Workflow
+When asked to work with a GitHub repository:
+1. git_clone the repo into workspace/project-name/
+2. list_files to understand the structure
+3. read_file key files (package.json, README, main entry)
+4. Make all required changes with write_file
+5. run_command to install and build
+6. browser_start_app and verify with browser_navigate
+7. Fix any errors found in browser_get_console
+8. git_push with a clear commit message
+9. github_get_repo_url to confirm the remote URL
+10. Report the live GitHub URL and any deployment URL
+
+When asked to delete and rewrite a project:
+1. git_delete_and_reclone to get a clean copy
+2. Rewrite required files
+3. Build, test, verify in browser
+4. git_push the new version
+
+
+## GitHub Repository Workflow
+When asked to work with a GitHub repository:
+1. git_clone the repo into workspace/project-name/
+2. list_files to understand the structure
+3. read_file key files (package.json, README, main entry)
+4. Make all required changes with write_file
+5. run_command to install and build
+6. browser_start_app and verify with browser_navigate
+7. Fix any errors found in browser_get_console
+8. git_push with a clear commit message
+9. github_get_repo_url to confirm the remote URL
+10. Report the live GitHub URL and any deployment URL
+
+When asked to delete and rewrite a project:
+1. git_delete_and_reclone to get a clean copy
+2. Rewrite required files
+3. Build, test, verify in browser
+4. git_push the new version
 `;
 
 export interface AgentRequest {
@@ -94,6 +181,8 @@ export interface AgentResult {
   id?: string;
   steps: number;
   toolCalls: number;
+  browserRepairs: number;
+  status: 'completed' | 'max_steps' | 'max_repairs';
 }
 
 export function getAgentRuntimeStatus(): {
@@ -476,6 +565,8 @@ export async function runTravelerAgent(
   let id: string | undefined;
   let steps = 0;
   let toolCalls = 0;
+  let browserRepairCount = 0;
+  const MAX_BROWSER_REPAIRS = 10;
 
   while (steps < maxSteps) {
     steps += 1;
@@ -500,6 +591,24 @@ export async function runTravelerAgent(
 
     for (const call of calls) {
       try {
+        // Track browser repair iterations
+        if (
+          call.name === 'browser_start_app' ||
+          call.name === 'browser_navigate'
+        ) {
+          if (browserRepairCount > 0) {
+            // This is a re-attempt after a fix
+          }
+        }
+        if (call.name === 'browser_stop_app') {
+          browserRepairCount += 1;
+          if (browserRepairCount >= MAX_BROWSER_REPAIRS) {
+            messages.push({
+              role: 'user' as const,
+              content: `[SYSTEM] You have reached the maximum browser repair limit (${MAX_BROWSER_REPAIRS}). Report the current state and stop.`,
+            });
+          }
+        }
         const result = await executeTool(call.name, call.arguments);
         messages.push({
           role: 'user',
@@ -522,6 +631,8 @@ export async function runTravelerAgent(
     id,
     steps,
     toolCalls,
+    browserRepairs: browserRepairCount,
+    status: 'completed' as const,
   };
 }
 

@@ -29,7 +29,7 @@ FALLBACK_MODELS = [
     value.strip()
     for value in os.getenv(
         "FALLBACK_MODELS",
-        "cerebras/llama-3.3-70b",
+        "cerebras/llama-3.3-70b,minimax/minimax-m3:free",
     ).split(",")
     if value.strip()
 ]
@@ -65,3 +65,27 @@ for directory in (
     JOB_DIR,
 ):
     directory.mkdir(parents=True, exist_ok=True)
+
+# ── Vercel AI Gateway ─────────────────────────────────────────────────────────
+AI_GATEWAY_API_KEY = os.getenv("AI_GATEWAY_API_KEY", "").strip()
+VERCEL_GATEWAY_URL = os.getenv(
+    "VERCEL_GATEWAY_URL",
+    "https://ai-gateway.vercel.sh/v1/chat/completions",
+).strip()
+VERCEL_GATEWAY_MODEL = os.getenv(
+    "VERCEL_GATEWAY_MODEL",
+    "anthropic/claude-sonnet-4-6",
+).strip()
+
+# ── Kilo AI Gateway ───────────────────────────────────────────────────────────
+KILO_API_KEY = os.getenv("KILO_API_KEY", "").strip()
+KILO_GATEWAY_URL = os.getenv(
+    "KILO_GATEWAY_URL",
+    "https://api.kilo.ai/api/gateway/chat/completions",
+).strip()
+KILO_MODEL = os.getenv("KILO_MODEL", "anthropic/claude-sonnet-4-6").strip()
+
+# ── Google Gemini (free tier available) ──────────────────────────────────────
+GEMINI_API_KEY = os.getenv("GEMINI_API_KEY", "").strip()
+GEMINI_URL = "https://generativelanguage.googleapis.com/v1beta/openai/chat/completions"
+GEMINI_MODEL = os.getenv("GEMINI_MODEL", "gemini-3.6-flash").strip()
