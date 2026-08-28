@@ -204,3 +204,156 @@ async def gemini_chat_proxy(request: Request):
 if __name__ == "__main__":
     import uvicorn
     uvicorn.run("main:app", host=HOST, port=PORT, reload=False)
+
+
+# ─── WebSocket Terminal ────────────────────────────────────────────────────────
+
+import asyncio
+from fastapi import WebSocket, WebSocketDisconnect
+
+@app.websocket("/ws/terminal")
+async def terminal_ws(websocket: WebSocket):
+    await websocket.accept()
+    try:
+        process = await asyncio.create_subprocess_shell(
+            "/bin/bash",
+            stdin=asyncio.subprocess.PIPE,
+            stdout=asyncio.subprocess.PIPE,
+            stderr=asyncio.subprocess.STDOUT,
+        )
+
+        async def send_output():
+            try:
+                while True:
+                    data = await process.stdout.read(1024)
+                    if not data:
+                        break
+                    await websocket.send_text(data.decode(errors="replace"))
+            except Exception:
+                pass
+
+        async def recv_input():
+            try:
+                while True:
+                    cmd = await websocket.receive_text()
+                    if process.stdin:
+                        process.stdin.write(cmd.encode())
+                        await process.stdin.drain()
+            except WebSocketDisconnect:
+                pass
+
+        await asyncio.gather(send_output(), recv_input())
+    except WebSocketDisconnect:
+        pass
+    except Exception as exc:
+        logger.exception("Terminal WS error: %s", exc)
+    finally:
+        try:
+            await websocket.close()
+        except Exception:
+            pass
+
+
+# ─── Models list ──────────────────────────────────────────────────────────────
+
+@app.get("/v1/models")
+async def list_models():
+    """Return available models from all active providers."""
+    from app.providers import provider_status
+    status = provider_status()
+    models = []
+
+    if status.get("credentials", {}).get("groq"):
+        models += [
+            {"id": "llama-3.3-70b-versatile", "provider": "groq", "name": "Llama 3.3 70B (Groq)"},
+            {"id": "llama-3.1-8b-instant", "provider": "groq", "name": "Llama 3.1 8B (Groq Fast)"},
+        ]
+    if status.get("credentials", {}).get("cerebras"):
+        models += [
+            {"id": "llama-3.3-70b", "provider": "cerebras", "name": "Llama 3.3 70B (Cerebras)"},
+        ]
+    if status.get("credentials", {}).get("openrouter"):
+        models += [
+            {"id": "minimax/minimax-m3:free", "provider": "openrouter", "name": "MiniMax M3 (Free)"},
+            {"id": "meta-llama/llama-3.1-70b-instruct:free", "provider": "openrouter", "name": "Llama 3.1 70B (Free)"},
+            {"id": "google/gemini-flash-1.5:free", "provider": "openrouter", "name": "Gemini Flash 1.5 (Free)"},
+        ]
+
+    return {
+        "object": "list",
+        "data": [
+            {
+                "id": m["id"],
+                "object": "model",
+                "created": 1700000000,
+                "owned_by": m["provider"],
+                "name": m["name"],
+            }
+            for m in models
+        ],
+        "primary": status.get("primary"),
+        "fallbacks": status.get("fallbacks", []),
+    }
+
+
+# ─── Android APK build proxy ──────────────────────────────────────────────────
+
+@app.post("/api/android/build")
+async def android_build(request: Request):
+    """Proxy APK build request to HF Space builder."""
+    import httpx
+    body = await request.json()
+    hf_url = "https://daviddolor-traveler-dev-backend.hf.space/api/android/build"
+
+    try:
+        async with httpx.AsyncClient(timeout=120.0) as client:
+            resp = await client.post(
+                hf_url,
+                json=body,
+                headers={"Content-Type": "application/json"},
+            )
+        if resp.status_code == 200:
+            return resp.json()
+        # HF Space endpoint doesn't exist yet — return helpful error
+        return {
+            "success": False,
+            "error": f"HF Space builder returned {resp.status_code}. The /api/android/build endpoint needs to be added to daviddolor-traveler-dev-backend.",
+            "hf_url": hf_url,
+        }
+    except httpx.TimeoutException:
+        return {"success": False, "error": "APK build timed out after 120s. HF Space may be cold-starting."}
+    except Exception as exc:
+        return {"success": False, "error": str(exc)}
+
+
+# ─── Code execution (for Notebook cells) ─────────────────────────────────────
+
+class RunCodeRequest(BaseModel):
+    language: str
+    code: str
+
+@app.post("/api/run-code")
+async def run_code(req: RunCodeRequest):
+    """Execute code via AI for notebook cells."""
+    lang_map = {
+        "javascript": "Node.js JavaScript",
+        "python": "Python 3.11",
+        "shell": "bash shell",
+    }
+    lang_label = lang_map.get(req.language, req.language)
+
+    try:
+        raw_messages = [
+            {
+                "role": "system",
+                "content": f"You are a {lang_label} interpreter. Execute the code and return ONLY the output — no explanation, no markdown, no code fences. Just the raw output as it would appear in a terminal."
+            },
+            {"role": "user", "content": req.code}
+        ]
+        from app.providers import chat
+        response = await chat(messages=raw_messages, temperature=0.0)
+        content = response.get("choices", [{}])[0].get("message", {}).get("content", "") or response.get("content", "")
+        return {"success": True, "output": content}
+    except Exception as exc:
+        return {"success": False, "output": f"Execution error: {exc}"}
+
