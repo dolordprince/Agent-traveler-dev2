@@ -372,7 +372,7 @@ from fastapi.responses import StreamingResponse
 from typing import Optional
 
 # ── In-memory job store (resets on restart — use DB for persistence) ──────────
-_build_jobs: dict = {{}}
+_build_jobs: dict = {}
 
 # ════════════════════════════════════════════
 # DISCOVERY / HEALTH
@@ -692,7 +692,7 @@ async def upload_files(files: list[UploadFile] = File(...)):
 # WORKSPACES
 # ════════════════════════════════════════════
 
-_workspaces: dict = {{}}
+_workspaces: dict = {}
 
 class WorkspaceBody(BaseModel):
     name: str = "Untitled Workspace"
@@ -761,7 +761,7 @@ async def save_canvas(ws_id: str, body: dict):
 # PLUGINS / SKILLS / MCP / AGENT
 # ════════════════════════════════════════════
 
-_plugins: dict = {{}}
+_plugins: dict = {}
 
 class PluginBody(BaseModel):
     name: str
