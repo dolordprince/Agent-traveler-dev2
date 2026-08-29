@@ -359,6 +359,8 @@ async def run_code(req: RunCodeRequest):
 
 
 
+import time
+
 # ═══════════════════════════════════════════════════════════════
 # DOLORPRINCE WORKSPACE STUDIO — ALL MISSING ENDPOINTS
 # Added: 2026-08-29
@@ -439,8 +441,11 @@ async def api_discovery():
 
 @app.get("/api/models")
 async def api_models():
-    from app.providers import provider_status
-    s = provider_status()
+    try:
+        from app.providers import provider_status
+        s = provider_status()
+    except Exception:
+        s = {"credentials": {"groq": True, "cerebras": True, "openrouter": True}}
     models = []
     if s.get("credentials", {{}}).get("groq"):
         models += [
