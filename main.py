@@ -742,7 +742,7 @@ async def get_notebook(ws_id: str, nid: str):
 @app.put("/api/workspaces/{{ws_id}}/notebooks/{{nid}}")
 async def save_notebook(ws_id: str, nid: str, body: dict):
     if ws_id not in _workspaces: raise HTTPException(404)
-    if "notebooks" not in _workspaces[ws_id]: _workspaces[ws_id]["notebooks"] = {{}}
+    if "notebooks" not in _workspaces[ws_id]: _workspaces[ws_id]["notebooks"] = {}
     _workspaces[ws_id]["notebooks"][nid] = {{"id": nid, **body, "updatedAt": time.time()}}
     return _workspaces[ws_id]["notebooks"][nid]
 
@@ -767,7 +767,7 @@ class PluginBody(BaseModel):
     name: str
     description: str = ""
     code: str = ""
-    config: dict = {{}}
+    config: dict = {}
 
 @app.get("/api/plugins")
 async def list_plugins():
@@ -793,7 +793,7 @@ async def delete_plugin(plugin_id: str):
     return {{"success": True}}
 
 @app.post("/api/plugins/{{plugin_id}}/execute")
-async def execute_plugin(plugin_id: str, body: dict = {{}}):
+async def execute_plugin(plugin_id: str, body: dict = {}):
     if plugin_id not in _plugins: raise HTTPException(404)
     return {{"success": True, "pluginId": plugin_id, "output": f"Plugin {{_plugins[plugin_id]['name']}} executed"}}
 
