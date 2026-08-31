@@ -660,13 +660,108 @@ async def mcp_servers():
 
 @app.post("/api/agent/run")
 async def agent_run(body: dict):
-    messages = body.get("messages", [])
+    """
+    Execute one agent request.
+
+    Accepted input:
+      {"message": "..."}
+      {"messages": [{"role": "user", "content": "..."}]}
+      {"message": "...", "model": "...", "temperature": 0.1, "max_tokens": 4096}
+
+    The singular `message` form is normalized into the OpenAI-compatible
+    messages format so frontend clients cannot accidentally invoke the agent
+    with an empty conversation.
+    """
     try:
-        response = await chat(messages=messages, temperature=0.1)
-        content = response.get("choices", [{}])[0].get("message", {}).get("content", "")
-        return {"success": True, "content": content, "role": "assistant"}
-    except Exception as e:
-        return {"success": False, "error": str(e)}
+        raw_messages = body.get("messages")
+
+        if raw_messages is None:
+            message = body.get("message")
+            if isinstance(message, str) and message.strip():
+                raw_messages = [
+                    {"role": "user", "content": message.strip()}
+                ]
+            else:
+                raw_messages = []
+
+        if not isinstance(raw_messages, list):
+            raise HTTPException(
+                status_code=400,
+                detail="messages must be an array"
+            )
+
+        messages = []
+        for item in raw_messages:
+            if not isinstance(item, dict):
+                raise HTTPException(
+                    status_code=400,
+                    detail="each message must be an object"
+                )
+
+            role = item.get("role")
+            content = item.get("content")
+
+            if role not in {"system", "user", "assistant"}:
+                raise HTTPException(
+                    status_code=400,
+                    detail="message role must be system, user, or assistant"
+                )
+
+            if not isinstance(content, str):
+                raise HTTPException(
+                    status_code=400,
+                    detail="message content must be a string"
+                )
+
+            messages.append({
+                "role": role,
+                "content": content
+            })
+
+        if not messages:
+            raise HTTPException(
+                status_code=400,
+                detail="message or messages is required"
+            )
+
+        response = await chat(
+            messages=messages,
+            model=body.get("model"),
+            temperature=float(body.get("temperature", 0.1)),
+            max_tokens=body.get("max_tokens"),
+        )
+
+        choices = response.get("choices") or []
+        content = ""
+
+        if choices:
+            message = choices[0].get("message") or {}
+            content = message.get("content") or ""
+
+        if not content:
+            content = response.get("content") or ""
+
+        return {
+            "success": True,
+            "content": content,
+            "role": "assistant",
+            "model": response.get("model"),
+            "usage": response.get("usage", {}),
+        }
+
+    except HTTPException:
+        raise
+    except (TypeError, ValueError) as exc:
+        raise HTTPException(
+            status_code=400,
+            detail=f"Invalid agent request: {exc}"
+        )
+    except Exception as exc:
+        logger.exception("Agent run failed")
+        return {
+            "success": False,
+            "error": str(exc)
+        }
 
 @app.post("/api/tools/{tool_id}/execute")
 async def execute_tool(tool_id: str, body: dict = {}):
