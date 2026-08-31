@@ -13,7 +13,15 @@ CEREBRAS_URL = "https://api.cerebras.ai/v1/chat/completions"
 OPENROUTER_URL = "https://openrouter.ai/api/v1/chat/completions"
 
 # Workspace + Preview
-WORKSPACE_DIR = "/root/Agent-traveler-dev2/workspace"
+from pathlib import Path
+
+APP_DIR = Path(__file__).resolve().parent.parent
+WORKSPACE_DIR = os.getenv("WORKSPACE_DIR", str(APP_DIR / "workspace")).strip()
+
+if not WORKSPACE_DIR:
+    WORKSPACE_DIR = str(APP_DIR / "workspace")
+
+WORKSPACE_DIR = str(Path(WORKSPACE_DIR).expanduser().resolve())
 PREVIEW_BASE_PORT = 3000
 
 # Primary model (confirmed working)
