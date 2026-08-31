@@ -1,0 +1,18 @@
+{
+  "name": "traveler-dev-workspace",
+  "private": true,
+  "version": "1.0.0",
+  "type": "module",
+  "scripts": {
+    "dev": "vite",
+    "build": "vite build",
+    "preview": "vite preview"
+  },
+  "dependencies": {
+    "@stackblitz/sdk": "^1.11.0",
+    "@webcontainer/api": "^1.6.1"
+  },
+  "devDependencies": {
+    "vite": "^7.1.3"
+  }
+}
