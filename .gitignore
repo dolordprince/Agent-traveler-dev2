@@ -10,21 +10,20 @@ env/
 .env.*
 !.env.example
 
-logs/
+*.pid
 *.log
-
-*.backup.*
-*.bak
-*.pre_export_sync.*
 
 .pytest_cache/
 .mypy_cache/
 .ruff_cache/
 
-node_modules/
-.next/
+.DS_Store
+.idea/
+.vscode/
+
 dist/
 build/
-coverage/
+node_modules/
 
-.DS_Store
+traveler-dev.log
+traveler-dev.pid
