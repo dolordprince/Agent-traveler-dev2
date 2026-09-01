@@ -348,7 +348,10 @@ async function requestProject(prompt: string): Promise<ProjectFile[]> {
         "Content-Type": "application/json"
       },
       body: JSON.stringify({
-        message: `
+        messages: [
+          {
+            role: "user",
+            content: `
 Build the requested production web application.
 
 Return ONLY valid JSON.
@@ -377,8 +380,10 @@ The project MUST:
 - contain no markdown outside the JSON
 
 User request:
-${prompt}
-        `.trim()
+\${prompt}
+            `.trim()
+          }
+        ]
       })
     }
   );
