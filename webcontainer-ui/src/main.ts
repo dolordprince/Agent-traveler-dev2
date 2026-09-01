@@ -339,7 +339,7 @@ async function startPreview() {
   setRuntime(true, "WebContainer running");
 }
 
-async function requestProject(_prompt: string): Promise<ProjectFile[]> {
+async function requestProject(prompt: string): Promise<ProjectFile[]> {
   const response = await fetch(
     `${API}/api/agent/run`,
     {
@@ -380,7 +380,7 @@ The project MUST:
 - contain no markdown outside the JSON
 
 User request:
-\${prompt}
+${prompt}
             `.trim()
           }
         ]
