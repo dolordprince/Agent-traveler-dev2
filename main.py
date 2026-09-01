@@ -661,107 +661,181 @@ async def mcp_servers():
 @app.post("/api/agent/run")
 async def agent_run(body: dict):
     """
-    Execute one agent request.
-
-    Accepted input:
-      {"message": "..."}
-      {"messages": [{"role": "user", "content": "..."}]}
-      {"message": "...", "model": "...", "temperature": 0.1, "max_tokens": 4096}
-
-    The singular `message` form is normalized into the OpenAI-compatible
-    messages format so frontend clients cannot accidentally invoke the agent
-    with an empty conversation.
+    Smart agent endpoint with:
+    - JSON repair for truncated responses
+    - Retry logic (up to 3 attempts)
+    - Forced max_tokens=6000 for complex builds
+    - name/path field normalization
     """
+    import json as _json
+
+    def repair_json(raw: str) -> str:
+        """Try to repair truncated/malformed JSON."""
+        raw = raw.strip()
+        # Strip markdown fences
+        if raw.startswith("```"):
+            lines = raw.split("\n")
+            raw = "\n".join(lines[1:])
+            if raw.endswith("```"):
+                raw = raw[:-3].strip()
+        # Find JSON boundaries
+        start_idx = raw.find("{")
+        if start_idx == -1:
+            return raw
+        raw = raw[start_idx:]
+        # Count brackets to find where JSON ends or needs closing
+        depth = 0
+        last_valid = 0
+        in_string = False
+        escape_next = False
+        for i, ch in enumerate(raw):
+            if escape_next:
+                escape_next = False
+                continue
+            if ch == '\\' and in_string:
+                escape_next = True
+                continue
+            if ch == '"':
+                in_string = not in_string
+            if not in_string:
+                if ch == '{':
+                    depth += 1
+                elif ch == '}':
+                    depth -= 1
+                    if depth == 0:
+                        last_valid = i + 1
+                        break
+        if last_valid > 0:
+            return raw[:last_valid]
+        # Try to close unclosed JSON
+        raw = raw.rstrip().rstrip(',')
+        closes = ']' * raw.count('[') - raw.count(']')
+        closes += '}' * raw.count('{') - raw.count('}')
+        return raw + closes
+
+    def normalize_files(files: list) -> list:
+        """Accept both name and path fields from AI response."""
+        result = []
+        for f in files:
+            if not isinstance(f, dict):
+                continue
+            path = f.get("path") or f.get("name") or ""
+            content_val = f.get("content", "")
+            if path and isinstance(content_val, str):
+                result.append({"path": path, "content": content_val})
+        return result
+
     try:
         raw_messages = body.get("messages")
-
         if raw_messages is None:
             message = body.get("message")
             if isinstance(message, str) and message.strip():
-                raw_messages = [
-                    {"role": "user", "content": message.strip()}
-                ]
+                raw_messages = [{"role": "user", "content": message.strip()}]
             else:
                 raw_messages = []
 
         if not isinstance(raw_messages, list):
-            raise HTTPException(
-                status_code=400,
-                detail="messages must be an array"
-            )
+            raise HTTPException(status_code=400, detail="messages must be an array")
 
         messages = []
         for item in raw_messages:
             if not isinstance(item, dict):
-                raise HTTPException(
-                    status_code=400,
-                    detail="each message must be an object"
-                )
-
+                raise HTTPException(status_code=400, detail="each message must be an object")
             role = item.get("role")
             content = item.get("content")
-
             if role not in {"system", "user", "assistant"}:
-                raise HTTPException(
-                    status_code=400,
-                    detail="message role must be system, user, or assistant"
-                )
-
+                raise HTTPException(status_code=400, detail="message role must be system, user, or assistant")
             if not isinstance(content, str):
-                raise HTTPException(
-                    status_code=400,
-                    detail="message content must be a string"
-                )
-
-            messages.append({
-                "role": role,
-                "content": content
-            })
+                raise HTTPException(status_code=400, detail="message content must be a string")
+            messages.append({"role": role, "content": content})
 
         if not messages:
-            raise HTTPException(
-                status_code=400,
-                detail="message or messages is required"
-            )
+            raise HTTPException(status_code=400, detail="message or messages is required")
 
-        response = await chat(
-            messages=messages,
-            model=body.get("model"),
-            temperature=float(body.get("temperature", 0.1)),
-            max_tokens=body.get("max_tokens"),
-        )
+        # Add system prompt for build requests
+        user_content = messages[-1].get("content", "").lower()
+        is_build_request = any(kw in user_content for kw in [
+            "build", "create", "make", "generate", "app", "website",
+            "landing", "page", "component", "files", "project"
+        ])
 
-        choices = response.get("choices") or []
-        content = ""
+        if is_build_request:
+            messages = [{"role": "system", "content": (
+                "You are a production web developer. "
+                "Return ONLY valid JSON with this exact shape: "
+                '{"files": [{"path": "filename", "content": "file content"}]} '
+                "Rules: "
+                "1. Return ONLY JSON, no markdown, no explanation. "
+                "2. Keep each file content concise but complete. "
+                "3. For landing pages: index.html with inline CSS and JS only. "
+                "4. Always include package.json with vite as dev dependency. "
+                "5. Max 5 files total to avoid truncation. "
+                "6. Escape all quotes and newlines in content strings properly."
+            )}] + messages
 
-        if choices:
-            message = choices[0].get("message") or {}
-            content = message.get("content") or ""
+        # Retry loop - up to 3 attempts
+        last_error = None
+        for attempt in range(3):
+            try:
+                logger.info(f"[agent/run] attempt {attempt + 1}/3")
+                response = await chat(
+                    messages=messages,
+                    model=body.get("model"),
+                    temperature=float(body.get("temperature", 0.1)),
+                    max_tokens=body.get("max_tokens") or 6000,
+                )
 
-        if not content:
-            content = response.get("content") or ""
+                choices = response.get("choices") or []
+                content = ""
+                if choices:
+                    msg = choices[0].get("message") or {}
+                    content = msg.get("content") or ""
+                if not content:
+                    content = response.get("content") or ""
 
-        return {
-            "success": True,
-            "content": content,
-            "role": "assistant",
-            "model": response.get("model"),
-            "usage": response.get("usage", {}),
-        }
+                # Try to parse and validate JSON if it looks like a build response
+                if is_build_request and content.strip().startswith("{"):
+                    try:
+                        repaired = repair_json(content)
+                        parsed = _json.loads(repaired)
+                        if "files" in parsed:
+                            parsed["files"] = normalize_files(parsed["files"])
+                            content = _json.dumps(parsed)
+                    except Exception as je:
+                        logger.warning(f"[agent/run] JSON repair failed attempt {attempt+1}: {je}")
+                        if attempt < 2:
+                            # Ask AI to fix its own output
+                            messages.append({"role": "assistant", "content": content})
+                            messages.append({"role": "user", "content": (
+                                "Your previous response had invalid JSON. "
+                                "Please return ONLY valid JSON with the files array. "
+                                "Keep file contents shorter if needed."
+                            )})
+                            last_error = str(je)
+                            continue
+
+                return {
+                    "success": True,
+                    "content": content,
+                    "role": "assistant",
+                    "model": response.get("model"),
+                    "usage": response.get("usage", {}),
+                }
+
+            except Exception as e:
+                last_error = str(e)
+                logger.warning(f"[agent/run] attempt {attempt+1} failed: {e}")
+                if attempt == 2:
+                    raise HTTPException(status_code=500, detail=f"Agent failed after 3 attempts: {last_error}")
+
+        raise HTTPException(status_code=500, detail=f"Agent failed: {last_error}")
 
     except HTTPException:
         raise
-    except (TypeError, ValueError) as exc:
-        raise HTTPException(
-            status_code=400,
-            detail=f"Invalid agent request: {exc}"
-        )
     except Exception as exc:
-        logger.exception("Agent run failed")
-        return {
-            "success": False,
-            "error": str(exc)
-        }
+        logger.exception("agent_run failed")
+        raise HTTPException(status_code=500, detail=str(exc))
+
 
 @app.post("/api/tools/{tool_id}/execute")
 async def execute_tool(tool_id: str, body: dict = {}):
