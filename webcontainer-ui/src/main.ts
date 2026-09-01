@@ -527,7 +527,7 @@ promptEl.addEventListener("keydown", (event) => {
     event.preventDefault();
     void buildProject();
   }
-);
+  });
 
 document
   .querySelector<HTMLButtonElement>("#openPreview")!
