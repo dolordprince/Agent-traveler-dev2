@@ -27,3 +27,4 @@ node_modules/
 
 traveler-dev.log
 traveler-dev.pid
+.env.local

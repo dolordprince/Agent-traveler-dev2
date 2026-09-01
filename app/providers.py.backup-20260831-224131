@@ -1,0 +1,594 @@
+import logging
+from typing import Any
+
+import httpx
+
+from .config import (
+    CEREBRAS_API_KEY,
+    CEREBRAS_URL,
+    FALLBACK_MODELS,
+    GEMINI_API_KEY,
+    GROQ_API_KEY,
+    GROQ_MODELS_URL,
+    GROQ_URL,
+    OPENROUTER_API_KEY,
+    OPENROUTER_FALLBACK_MODEL,
+    OPENROUTER_MODEL,
+    OPENROUTER_URL,
+    PRIMARY_MODEL,
+    WEBCONTAINER_API_URL,
+    WEBCONTAINER_ENABLED,
+)
+
+logger = logging.getLogger("traveler.providers")
+
+
+TRAVELER_DEV_SYSTEM_PROMPT = (
+    "You are Traveler Dev, an autonomous production-grade software "
+    "engineering agent. "
+    "Follow the user's current request exactly. "
+    "For ordinary chat or direct instructions, answer directly. "
+    "For coding requests, produce complete production-ready code and "
+    "respect the requested framework, files, architecture, APIs, and "
+    "constraints. "
+    "Do not invent requirements that the user did not request. "
+    "Do not force a fixed application type. "
+    "Do not ignore explicit output-format instructions. "
+    "When the user requests an exact response, return exactly that "
+    "response and nothing else."
+)
+
+
+class ProviderError(Exception):
+    pass
+
+
+# ---------------------------------------------------------------------------
+# Credentials
+# ---------------------------------------------------------------------------
+
+_PROVIDER_KEYS = {
+    "groq": "GROQ_API_KEY",
+    "cerebras": "CEREBRAS_API_KEY",
+    "openrouter": "OPENROUTER_API_KEY",
+    "gemini": "GEMINI_API_KEY",
+}
+
+
+def _get_credential(provider: str) -> str:
+    """
+    Read credentials directly from the current process environment.
+
+    This is intentionally evaluated at request time rather than relying
+    exclusively on values imported during module initialization.
+    """
+    import os
+
+    env_name = _PROVIDER_KEYS.get(provider)
+
+    if not env_name:
+        return ""
+
+    value = os.getenv(env_name, "").strip()
+
+    if value:
+        return value
+
+    # Imported config values are retained as a secondary source.
+    configured = {
+        "groq": GROQ_API_KEY,
+        "cerebras": CEREBRAS_API_KEY,
+        "openrouter": OPENROUTER_API_KEY,
+        "gemini": GEMINI_API_KEY,
+    }
+
+    return str(configured.get(provider, "") or "").strip()
+
+
+def _require_credential(provider: str) -> str:
+    key = _get_credential(provider)
+
+    if not key:
+        raise ProviderError(
+            f"Missing API key for provider '{provider}'"
+        )
+
+    return key
+
+
+# ---------------------------------------------------------------------------
+# Provider routing
+# ---------------------------------------------------------------------------
+
+def _provider_for_model(model: str) -> str:
+    normalized = str(model or "").strip().lower()
+
+    if normalized.startswith("groq/"):
+        return "groq"
+
+    if normalized.startswith("cerebras/"):
+        return "cerebras"
+
+    if normalized.startswith("gemini/"):
+        return "gemini"
+
+    if normalized.startswith("openrouter/"):
+        return "openrouter"
+
+    # Bare OpenRouter model IDs are treated as OpenRouter.
+    return "openrouter"
+
+
+def _clean_model(provider: str, model: str) -> str:
+    model = str(model).strip()
+
+    prefixes = {
+        "groq": "groq/",
+        "cerebras": "cerebras/",
+        "gemini": "gemini/",
+        "openrouter": "openrouter/",
+    }
+
+    prefix = prefixes.get(provider)
+
+    if prefix and model.lower().startswith(prefix):
+        return model[len(prefix):]
+
+    return model
+
+
+def _url(provider: str) -> str:
+    if provider == "groq":
+        return GROQ_URL
+
+    if provider == "cerebras":
+        return CEREBRAS_URL
+
+    if provider == "openrouter":
+        return OPENROUTER_URL
+
+    raise ProviderError(
+        f"Unsupported provider '{provider}'"
+    )
+
+
+def _headers(provider: str) -> dict[str, str]:
+    key = _require_credential(provider)
+
+    headers = {
+        "Authorization": f"Bearer {key}",
+        "Content-Type": "application/json",
+    }
+
+    if provider == "openrouter":
+        headers.update(
+            {
+                "HTTP-Referer": "https://traveler-dev.onrender.com",
+                "X-Title": "TRAVELER DEV",
+            }
+        )
+
+    return headers
+
+
+# ---------------------------------------------------------------------------
+# Provider chain
+# ---------------------------------------------------------------------------
+
+def provider_chain(requested_model: str | None) -> list[str]:
+    if requested_model:
+        return [str(requested_model).strip()]
+
+    result: list[str] = []
+
+    for model in [PRIMARY_MODEL, *FALLBACK_MODELS]:
+        model = str(model).strip()
+
+        if model and model not in result:
+            result.append(model)
+
+    # OpenRouter is added only when its credential exists.
+    if _get_credential("openrouter"):
+        for model in (
+            f"openrouter/{OPENROUTER_MODEL}",
+            f"openrouter/{OPENROUTER_FALLBACK_MODEL}",
+        ):
+            if model not in result:
+                result.append(model)
+
+    return result
+
+
+# ---------------------------------------------------------------------------
+# Groq live model validation
+# ---------------------------------------------------------------------------
+
+async def validate_groq_models(
+    models: list[str],
+) -> list[str]:
+    key = _get_credential("groq")
+
+    if not key:
+        return models
+
+    try:
+        async with httpx.AsyncClient(
+            timeout=15.0,
+            trust_env=False,
+        ) as client:
+            response = await client.get(
+                GROQ_MODELS_URL,
+                headers={
+                    "Authorization": f"Bearer {key}",
+                },
+            )
+
+        if response.status_code != 200:
+            logger.warning(
+                "Groq model list returned HTTP %s",
+                response.status_code,
+            )
+            return models
+
+        data = response.json()
+
+        available = {
+            item.get("id")
+            for item in data.get("data", [])
+            if isinstance(item, dict) and item.get("id")
+        }
+
+        validated: list[str] = []
+
+        for model in models:
+            bare = _clean_model("groq", model)
+
+            if bare in available:
+                validated.append(model)
+            else:
+                logger.warning(
+                    "Groq model '%s' is not currently available",
+                    bare,
+                )
+
+        return validated or models
+
+    except Exception as exc:
+        logger.warning(
+            "Groq model validation failed: %s",
+            exc,
+        )
+        return models
+
+
+# ---------------------------------------------------------------------------
+# WebContainer
+# ---------------------------------------------------------------------------
+
+async def webcontainer_boot(
+    project_files: dict[str, str],
+) -> dict[str, Any]:
+    if not WEBCONTAINER_ENABLED:
+        return {
+            "status": "disabled",
+            "message": "WebContainer integration is disabled",
+        }
+
+    payload = {
+        "files": {
+            path: {
+                "file": {
+                    "contents": content,
+                }
+            }
+            for path, content in project_files.items()
+        }
+    }
+
+    try:
+        async with httpx.AsyncClient(
+            timeout=30.0,
+            trust_env=False,
+        ) as client:
+            response = await client.post(
+                f"{WEBCONTAINER_API_URL}/v1/boot",
+                json=payload,
+                headers={
+                    "Content-Type": "application/json",
+                },
+            )
+
+        if response.status_code in (200, 201):
+            return {
+                "status": "ok",
+                "data": response.json(),
+            }
+
+        return {
+            "status": "error",
+            "http_status": response.status_code,
+            "message": response.text,
+        }
+
+    except Exception as exc:
+        logger.exception(
+            "WebContainer boot error"
+        )
+        return {
+            "status": "error",
+            "message": str(exc),
+        }
+
+
+async def webcontainer_run_command(
+    instance_id: str,
+    command: str,
+    args: list[str] | None = None,
+) -> dict[str, Any]:
+    try:
+        async with httpx.AsyncClient(
+            timeout=60.0,
+            trust_env=False,
+        ) as client:
+            response = await client.post(
+                f"{WEBCONTAINER_API_URL}/v1/instances/"
+                f"{instance_id}/exec",
+                json={
+                    "command": command,
+                    "args": args or [],
+                },
+                headers={
+                    "Content-Type": "application/json",
+                },
+            )
+
+        if response.status_code == 200:
+            return {
+                "status": "ok",
+                "data": response.json(),
+            }
+
+        return {
+            "status": "error",
+            "http_status": response.status_code,
+            "message": response.text,
+        }
+
+    except Exception as exc:
+        logger.exception(
+            "WebContainer exec error"
+        )
+        return {
+            "status": "error",
+            "message": str(exc),
+        }
+
+
+def webcontainer_status() -> dict[str, Any]:
+    return {
+        "enabled": WEBCONTAINER_ENABLED,
+        "api_url": WEBCONTAINER_API_URL,
+    }
+
+
+# ---------------------------------------------------------------------------
+# Provider status
+# ---------------------------------------------------------------------------
+
+def provider_status() -> dict[str, Any]:
+    return {
+        "primary": PRIMARY_MODEL,
+        "fallbacks": FALLBACK_MODELS,
+        "credentials": {
+            "groq": bool(_get_credential("groq")),
+            "cerebras": bool(_get_credential("cerebras")),
+            "openrouter": bool(
+                _get_credential("openrouter")
+            ),
+            "gemini": bool(_get_credential("gemini")),
+        },
+        "openrouter": {
+            "model": OPENROUTER_MODEL,
+            "fallback_model": OPENROUTER_FALLBACK_MODEL,
+        },
+        "webcontainer": webcontainer_status(),
+    }
+
+
+# ---------------------------------------------------------------------------
+# Core chat
+# ---------------------------------------------------------------------------
+
+async def chat(
+    messages: list[dict[str, Any]],
+    model: str | None = None,
+    temperature: float = 0.2,
+    max_tokens: int | None = None,
+    **kwargs: Any,
+) -> dict[str, Any]:
+
+    if not messages:
+        raise ProviderError(
+            "At least one message is required"
+        )
+
+    normalized_messages = [
+        {
+            "role": item["role"],
+            "content": item["content"],
+        }
+        for item in messages
+    ]
+
+    if not any(
+        item.get("role") == "system"
+        for item in normalized_messages
+    ):
+        normalized_messages.insert(
+            0,
+            {
+                "role": "system",
+                "content": TRAVELER_DEV_SYSTEM_PROMPT,
+            },
+        )
+
+    models_to_try = provider_chain(model)
+
+    if not models_to_try:
+        raise ProviderError(
+            "No provider models are configured"
+        )
+
+    last_error: Exception | None = None
+
+    timeout = httpx.Timeout(
+        connect=20.0,
+        read=120.0,
+        write=120.0,
+        pool=20.0,
+    )
+
+    async with httpx.AsyncClient(
+        timeout=timeout,
+        trust_env=False,
+        follow_redirects=False,
+    ) as client:
+
+        for target_model in models_to_try:
+            provider = _provider_for_model(
+                target_model
+            )
+
+            try:
+                key = _get_credential(provider)
+
+                if not key:
+                    error = ProviderError(
+                        f"Missing API key for provider '{provider}'"
+                    )
+
+                    logger.warning(
+                        "Skipping %s/%s: missing API key",
+                        provider,
+                        target_model,
+                    )
+
+                    last_error = error
+                    continue
+
+                clean_model = _clean_model(
+                    provider,
+                    target_model,
+                )
+
+                payload: dict[str, Any] = {
+                    "model": clean_model,
+                    "messages": normalized_messages,
+                    "temperature": temperature,
+                }
+
+                if max_tokens is not None:
+                    payload["max_tokens"] = int(max_tokens)
+
+                # Preserve additional OpenAI-compatible request fields.
+                for field in (
+                    "top_p",
+                    "frequency_penalty",
+                    "presence_penalty",
+                    "stop",
+                    "response_format",
+                ):
+                    if field in kwargs and kwargs[field] is not None:
+                        payload[field] = kwargs[field]
+
+                response = await client.post(
+                    _url(provider),
+                    headers=_headers(provider),
+                    json=payload,
+                )
+
+                response_text = response.text
+
+                if response.status_code != 200:
+                    logger.error(
+                        "Provider %s (%s) HTTP %s: %s",
+                        provider,
+                        clean_model,
+                        response.status_code,
+                        response_text[:500],
+                    )
+
+                    last_error = ProviderError(
+                        f"{provider} HTTP "
+                        f"{response.status_code}: "
+                        f"{response_text[:300]}"
+                    )
+
+                    continue
+
+                try:
+                    data = response.json()
+                except ValueError as exc:
+                    last_error = ProviderError(
+                        f"{provider} returned invalid JSON: {exc}"
+                    )
+                    continue
+
+                choices = data.get("choices") or []
+
+                if not choices:
+                    last_error = ProviderError(
+                        f"{provider} returned no choices"
+                    )
+                    continue
+
+                first_choice = choices[0] or {}
+                message = first_choice.get("message") or {}
+
+                content = (
+                    message.get("content")
+                    or message.get("reasoning_content")
+                    or data.get("content")
+                    or ""
+                )
+
+                return {
+                    "id": data.get("id", ""),
+                    "model": target_model,
+                    "content": content,
+                    "choices": choices,
+                    "usage": data.get("usage", {}),
+                    "reasoning": message.get(
+                        "reasoning_content"
+                    ),
+                    "provider": provider,
+                }
+
+            except ProviderError as exc:
+                last_error = exc
+                logger.warning(
+                    "Provider configuration error for %s: %s",
+                    target_model,
+                    exc,
+                )
+
+            except httpx.HTTPError as exc:
+                last_error = exc
+                logger.error(
+                    "HTTP error calling %s/%s: %s",
+                    provider,
+                    clean_model,
+                    exc,
+                )
+
+            except Exception as exc:
+                last_error = exc
+                logger.exception(
+                    "Unexpected provider error for %s",
+                    target_model,
+                )
+
+    raise ProviderError(
+        "All providers failed. Last error: "
+        f"{last_error}"
+    )
