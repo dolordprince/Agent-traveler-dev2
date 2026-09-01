@@ -439,6 +439,7 @@ User request:
     parsed as {
       files: Array<{
         path?: unknown;
+        name?: unknown;
         content?: unknown;
       }>;
     }
@@ -447,8 +448,9 @@ User request:
   const result: ProjectFile[] = [];
 
   for (const item of files) {
+    const filePath = item.path || item.name;
     if (
-      typeof item.path !== "string" ||
+      typeof filePath !== "string" ||
       typeof item.content !== "string"
     ) {
       throw new Error(
@@ -457,7 +459,7 @@ User request:
     }
 
     result.push({
-      path: item.path,
+      path: filePath,
       content: item.content
     });
   }
