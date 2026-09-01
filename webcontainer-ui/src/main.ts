@@ -339,7 +339,7 @@ async function startPreview() {
   setRuntime(true, "WebContainer running");
 }
 
-async function requestProject(prompt: string): Promise<ProjectFile[]> {
+async function requestProject(_prompt: string): Promise<ProjectFile[]> {
   const response = await fetch(
     `${API}/api/agent/run`,
     {
