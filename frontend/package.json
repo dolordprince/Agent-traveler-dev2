@@ -6,7 +6,8 @@
   "scripts": {
     "dev": "vite",
     "build": "vite build",
-    "preview": "vite preview"
+    "preview": "vite preview",
+    "deploy": "npm run build && npx wrangler pages deploy dist --project-name=agent-traveler-dev2"
   },
   "dependencies": {
     "@stackblitz/sdk": "^1.11.0",
