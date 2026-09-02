@@ -1,0 +1,126 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Traveler.Dev - AI WebContainer Workspace</title>
+  <script src="https://cdn.tailwindcss.com"></script>
+</head>
+<body class="bg-gray-900 text-white h-screen flex flex-col font-sans">
+
+  <!-- Navigation Bar -->
+  <header class="bg-gray-800 border-b border-gray-700 px-4 py-3 flex justify-between items-center">
+    <div class="flex items-center space-x-2">
+      <span class="text-xl font-bold text-indigo-400">TRAVELER.DEV</span>
+      <span class="text-xs bg-gray-700 text-gray-300 px-2 py-1 rounded">WebContainer Agent</span>
+    </div>
+    <button id="deployBtn" onclick="deployToSurge()" class="bg-indigo-600 hover:bg-indigo-500 text-white font-medium px-4 py-1.5 rounded-lg text-sm transition">
+      Deploy to Surge
+    </button>
+  </header>
+
+  <!-- Workspace Grid Layout -->
+  <main class="flex-1 grid grid-cols-1 md:grid-cols-2 gap-2 p-2 overflow-hidden">
+    
+    <!-- Code Editor Section -->
+    <div class="flex flex-col bg-gray-800 rounded-lg p-3 border border-gray-700">
+      <div class="flex justify-between items-center mb-2">
+        <span class="text-sm font-semibold text-gray-300">Sandbox Code (index.html)</span>
+        <span id="statusText" class="text-xs text-green-400">Connected</span>
+      </div>
+      <textarea id="codeEditor" class="flex-1 w-full bg-gray-950 text-green-400 font-mono p-3 rounded text-sm border border-gray-800 focus:outline-none resize-none" placeholder="Generated code will render here..."></textarea>
+      
+      <!-- Input Prompt Bar -->
+      <div class="mt-3 flex space-x-2">
+        <input id="promptInput" type="text" placeholder="Describe UI layout updates or request code modifications..." class="flex-1 bg-gray-950 border border-gray-700 rounded px-3 py-2 text-sm focus:outline-none focus:border-indigo-500 text-white">
+        <button onclick="generateCode()" class="bg-indigo-600 hover:bg-indigo-500 text-white px-4 py-2 rounded text-sm font-medium">Generate & Run</button>
+      </div>
+    </div>
+
+    <!-- WebContainer Preview Frame -->
+    <div class="flex flex-col bg-gray-800 rounded-lg p-3 border border-gray-700">
+      <span class="text-sm font-semibold text-gray-300 mb-2">Live Preview Window</span>
+      <iframe id="previewFrame" class="flex-1 w-full bg-white rounded border border-gray-700"></iframe>
+    </div>
+
+  </main>
+
+  <script>
+    const API_BASE = "https://manga-programme-vegas-developer.trycloudflare.com";
+
+    window.addEventListener('DOMContentLoaded', () => {
+      const savedCode = localStorage.getItem('instatic_sandbox_code');
+      if (savedCode) {
+        document.getElementById('codeEditor').value = savedCode;
+        updatePreview(savedCode);
+      }
+    });
+
+    function updatePreview(code) {
+      document.getElementById('previewFrame').srcdoc = code;
+    }
+
+    async function generateCode() {
+      const prompt = document.getElementById('promptInput').value;
+      if (!prompt) return;
+
+      const status = document.getElementById('statusText');
+      status.innerText = "Generating Code...";
+      status.className = "text-xs text-indigo-400 animate-pulse";
+
+      try {
+        const response = await fetch(`${API_BASE}/v1/chat/completions`, {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({
+            messages: [{ role: "user", content: prompt }]
+          })
+        });
+
+        const data = await response.json();
+        const generatedCode = data.choices[0].message.content;
+
+        document.getElementById('codeEditor').value = generatedCode;
+        localStorage.setItem('instatic_sandbox_code', generatedCode);
+        updatePreview(generatedCode);
+
+        status.innerText = "Code Updated";
+        status.className = "text-xs text-green-400";
+      } catch (err) {
+        console.error(err);
+        status.innerText = "Proxy Connection Failed";
+        status.className = "text-xs text-red-400";
+      }
+    }
+
+    async function deployToSurge() {
+      const btn = document.getElementById('deployBtn');
+      btn.innerText = "Deploying...";
+      btn.disabled = true;
+
+      try {
+        const response = await fetch(`${API_BASE}/v1/deploy`, {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({
+            dist_path: "/tmp/sample_site",
+            project_name: "instatic-cms"
+          })
+        });
+
+        const result = await response.json();
+        if (result.status === "success") {
+          alert("Deployed successfully to: " + result.url);
+        } else {
+          alert("Deploy failed: " + result.message);
+        }
+      } catch (err) {
+        alert("Deploy network error: " + err.message);
+      } finally {
+        btn.innerText = "Deploy to Surge";
+        btn.disabled = false;
+      }
+    }
+  </script>
+</body>
+</html>
