@@ -1,3 +1,8 @@
+#!/usr/bin/env bash
+set -euo pipefail
+
+echo "=== Fixing server.js fs import ==="
+cat << 'SERVEREOF' > server.js
 import express from 'express';
 import path from 'path';
 import fs from 'fs';
@@ -8,11 +13,10 @@ const __dirname = path.dirname(__filename);
 
 const app = express();
 
-// Permanent fix for nested iframe WebContainers (Hugging Face / StackBlitz)
+// Cross-Origin Isolation Headers required for WebContainer
 app.use((req, res, next) => {
-  res.setHeader('Cross-Origin-Embedder-Policy', 'credentialless');
+  res.setHeader('Cross-Origin-Embedder-Policy', 'require-corp');
   res.setHeader('Cross-Origin-Opener-Policy', 'same-origin');
-  res.setHeader('Access-Control-Allow-Origin', '*');
   next();
 });
 
@@ -28,5 +32,13 @@ app.get('*', (req, res) => {
 
 const PORT = process.env.PORT || 7860;
 app.listen(PORT, () => {
-  console.log(`Server running on port ${PORT} with Credentialless COOP/COEP.`);
+  console.log(`Server running on port ${PORT} with COOP/COEP enabled.`);
 });
+SERVEREOF
+
+echo "=== Committing and Pushing Fix to Hugging Face ==="
+git add server.js
+git commit -m "fix(server): replace path.existsSync with fs.existsSync" || true
+git push hf main --force || git push origin main --force
+
+echo "=== Deploy Fix Complete ==="
