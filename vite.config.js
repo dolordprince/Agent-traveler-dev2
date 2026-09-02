@@ -3,11 +3,5 @@ import react from '@vitejs/plugin-react'
 
 export default defineConfig({
   plugins: [react()],
-  base: '/Mynewnotebookstudio/', // Exact GitHub Pages subpath
-  server: {
-    headers: {
-      'Cross-Origin-Embedder-Policy': 'require-corp',
-      'Cross-Origin-Opener-Policy': 'same-origin'
-    }
-  }
+  base: '/Mynewnotebookstudio/',
 })
