@@ -1,16 +1,26 @@
+# Step 1: Build the static frontend app
+FROM node:22-alpine AS builder
+
+WORKDIR /app
+
+# Check if webcontainer-ui subfolder exists, otherwise build from root
+COPY . .
+
+RUN if [ -d "webcontainer-ui" ]; then \
+      cd webcontainer-ui && npm install && npm run build && cp -r dist /app/dist; \
+    else \
+      npm install && npm run build; \
+    fi
+
+# Step 2: Serve the built static files on port 7860 using serve
 FROM node:22-alpine
 
 WORKDIR /app
 
-# Copy root configurations
-COPY package*.json ./
+RUN npm install -g serve
 
-# Copy source directory (adjust path if your React app is inside a folder)
-COPY . .
+COPY --from=builder /app/dist /app/dist
 
-# Install dependencies and build static assets
-RUN npm ci || npm install
+EXPOSE 7860
 
-EXPOSE 5173
-
-CMD ["npm", "run", "dev", "--", "--host", "0.0.0.0", "--port", "5173"]
+CMD ["serve", "-s", "dist", "-l", "7860"]
