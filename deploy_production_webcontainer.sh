@@ -1,3 +1,12 @@
+#!/usr/bin/env bash
+set -euo pipefail
+
+TARGET_HTML="index.html"
+if [ -f "webcontainer-ui/index.html" ]; then
+  TARGET_HTML="webcontainer-ui/index.html"
+fi
+
+cat << 'HTMLEOF' > "$TARGET_HTML"
 <!DOCTYPE html>
 <html lang="en">
 <head>
@@ -394,3 +403,8 @@ app.listen(port, () => console.log('Server running on port ' + port));`
   </script>
 </body>
 </html>
+HTMLEOF
+
+git add .
+git commit -m "feat: complete production WebContainer engine and Surge API integration" || true
+git push hf main --force || git push origin main --force
