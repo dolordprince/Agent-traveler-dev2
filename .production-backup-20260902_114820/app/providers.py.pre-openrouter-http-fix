@@ -1,0 +1,340 @@
+import json
+import logging
+import os
+from typing import Any
+
+import httpx
+
+from .config import (
+    CEREBRAS_API_KEY,
+    CEREBRAS_URL,
+    FALLBACK_MODELS,
+    GEMINI_API_KEY,
+    GROQ_API_KEY,
+    GROQ_URL,
+    OPENROUTER_API_KEY,
+    OPENROUTER_FALLBACK_MODEL,
+    OPENROUTER_MODEL,
+    OPENROUTER_URL,
+    PRIMARY_MODEL,
+    WEBCONTAINER_ENABLED,
+)
+
+TRAVELER_DEV_SYSTEM_PROMPT = (
+    "You are Traveler Dev, an autonomous production-grade software engineering agent. "
+    "Follow the user's current request exactly. "
+    "For ordinary chat or direct instructions, answer the request directly. "
+    "For coding requests, produce complete production-ready code and respect the requested "
+    "framework, files, architecture, APIs, and constraints. "
+    "Do not invent requirements that the user did not request. "
+    "Do not force a banking application or any other fixed application type. "
+    "Do not ignore explicit output-format instructions. "
+    "When the user requests an exact response, return exactly that response and nothing else."
+)
+
+logger = logging.getLogger("traveler.providers")
+
+
+class ProviderError(Exception):
+    pass
+
+
+# ---------------------------------------------------------------------------
+# Credentials
+# ---------------------------------------------------------------------------
+
+def _get_credential(provider: str) -> str:
+    names = {
+        "groq": "GROQ_API_KEY",
+        "cerebras": "CEREBRAS_API_KEY",
+        "openrouter": "OPENROUTER_API_KEY",
+        "gemini": "GEMINI_API_KEY",
+    }
+
+    env_name = names.get(provider)
+    if not env_name:
+        return ""
+
+    value = os.getenv(env_name, "").strip()
+
+    if value:
+        return value
+
+    configured = {
+        "groq": GROQ_API_KEY,
+        "cerebras": CEREBRAS_API_KEY,
+        "openrouter": OPENROUTER_API_KEY,
+        "gemini": GEMINI_API_KEY,
+    }
+
+    return str(configured.get(provider, "") or "").strip()
+
+
+def _headers(provider: str) -> dict[str, str]:
+    key = _get_credential(provider)
+
+    if not key:
+        raise ProviderError(
+            f"Missing API credential for provider '{provider}'"
+        )
+
+    headers = {
+        "Authorization": f"Bearer {key}",
+        "Content-Type": "application/json",
+    }
+
+    if provider == "openrouter":
+        headers["HTTP-Referer"] = "https://agent-traveler-dev2.onrender.com"
+        headers["X-Title"] = "TRAVELER DEV"
+
+    return headers
+
+
+def _provider_for_model(model: str) -> str:
+    m = model.lower()
+    if m.startswith("groq/"):
+        return "groq"
+    if m.startswith("cerebras/"):
+        return "cerebras"
+    if m.startswith("gemini/"):
+        return "gemini"
+    return "openrouter"
+
+
+def _url(provider: str) -> str:
+    if provider == "groq":
+        return GROQ_URL
+    if provider == "cerebras":
+        return CEREBRAS_URL
+    return OPENROUTER_URL
+
+
+def _headers(provider: str) -> dict[str, str]:
+    key = _get_credential(provider)
+    headers = {
+        "Authorization": f"Bearer {key}",
+        "Content-Type": "application/json",
+    }
+    if provider == "openrouter":
+        headers["HTTP-Referer"] = "https://traveler-dev.onrender.com"
+        headers["X-Title"] = "TRAVELER DEV"
+    return headers
+
+
+# ---------------------------------------------------------------------------
+# Provider chain
+# ---------------------------------------------------------------------------
+
+def provider_chain(requested_model: str | None) -> list[str]:
+    if requested_model:
+        return [requested_model]
+    result = [PRIMARY_MODEL]
+    for m in FALLBACK_MODELS:
+        if m not in result:
+            result.append(m)
+    if _get_credential("openrouter"):
+        for m in (OPENROUTER_MODEL, OPENROUTER_FALLBACK_MODEL):
+            if m and m not in result:
+                result.append(m)
+    return result
+
+
+# ---------------------------------------------------------------------------
+# Runtime model validation against /openai/v1/models
+# ---------------------------------------------------------------------------
+
+async def validate_groq_models(models: list[str]) -> list[str]:
+    """Return only model IDs that Groq confirms exist right now."""
+    key = _get_credential("groq")
+    if not key:
+        return models
+    try:
+        async with httpx.AsyncClient(timeout=10.0) as client:
+            resp = await client.get(
+                "https://api.groq.com/openai/v1/models",
+                headers={"Authorization": f"Bearer {key}"},
+            )
+            if resp.status_code != 200:
+                logger.warning(f"Groq model list returned HTTP {resp.status_code}")
+                return models
+            available = {m["id"] for m in resp.json().get("data", [])}
+            validated = []
+            for m in models:
+                bare = m.split("/", 1)[1] if m.startswith("groq/") else m
+                if bare in available:
+                    validated.append(m)
+                else:
+                    logger.warning(f"Groq model '{bare}' not in live model list — skipping")
+            return validated if validated else models  # keep originals if all unknown
+    except Exception as exc:
+        logger.warning(f"Groq model validation failed: {exc}")
+        return models
+
+
+# ---------------------------------------------------------------------------
+# StackBlitz WebContainer API integration
+# ---------------------------------------------------------------------------
+
+WEBCONTAINER_API_URL = "https://webcontainer.api.stackblitz.com"
+
+
+async def webcontainer_boot(project_files: dict[str, str]) -> dict[str, Any]:
+    """
+    Boot a WebContainer instance with the given files.
+    project_files: { "path/to/file.tsx": "<file content>", ... }
+    Returns the boot response from StackBlitz.
+    """
+    if not WEBCONTAINER_ENABLED:
+        return {"status": "disabled", "message": "WebContainer integration is disabled"}
+
+    payload = {
+        "files": {
+            path: {"file": {"contents": content}}
+            for path, content in project_files.items()
+        }
+    }
+
+    try:
+        async with httpx.AsyncClient(timeout=30.0) as client:
+            resp = await client.post(
+                f"{WEBCONTAINER_API_URL}/v1/boot",
+                json=payload,
+                headers={"Content-Type": "application/json"},
+            )
+            if resp.status_code in (200, 201):
+                return {"status": "ok", "data": resp.json()}
+            return {
+                "status": "error",
+                "http_status": resp.status_code,
+                "message": resp.text,
+            }
+    except Exception as exc:
+        logger.error(f"WebContainer boot error: {exc}")
+        return {"status": "error", "message": str(exc)}
+
+
+async def webcontainer_run_command(
+    instance_id: str,
+    command: str,
+    args: list[str] | None = None,
+) -> dict[str, Any]:
+    """Run a shell command inside a live WebContainer instance."""
+    try:
+        async with httpx.AsyncClient(timeout=60.0) as client:
+            resp = await client.post(
+                f"{WEBCONTAINER_API_URL}/v1/instances/{instance_id}/exec",
+                json={"command": command, "args": args or []},
+                headers={"Content-Type": "application/json"},
+            )
+            if resp.status_code == 200:
+                return {"status": "ok", "data": resp.json()}
+            return {"status": "error", "http_status": resp.status_code, "message": resp.text}
+    except Exception as exc:
+        logger.error(f"WebContainer exec error: {exc}")
+        return {"status": "error", "message": str(exc)}
+
+
+def webcontainer_status() -> dict[str, Any]:
+    return {
+        "enabled": WEBCONTAINER_ENABLED,
+        "api_url": WEBCONTAINER_API_URL,
+    }
+
+
+# ---------------------------------------------------------------------------
+# Status
+# ---------------------------------------------------------------------------
+
+def provider_status() -> dict[str, Any]:
+    return {
+        "primary": PRIMARY_MODEL,
+        "fallbacks": FALLBACK_MODELS,
+        "credentials": {
+            "groq": bool(_get_credential("groq")),
+            "cerebras": bool(_get_credential("cerebras")),
+            "openrouter": bool(_get_credential("openrouter")),
+        },
+        "openrouter": {
+            "model": OPENROUTER_MODEL,
+            "fallback_model": OPENROUTER_FALLBACK_MODEL,
+        },
+        "webcontainer": webcontainer_status(),
+    }
+
+
+# ---------------------------------------------------------------------------
+# Core chat function
+# ---------------------------------------------------------------------------
+
+async def chat(
+    messages: list[dict[str, Any]],
+    model: str | None = None,
+    temperature: float = 0.2,
+    max_tokens: int | None = None,
+    **kwargs: Any,
+) -> dict[str, Any]:
+    if not any(m.get("role") == "system" for m in messages):
+        messages = [{"role": "system", "content": TRAVELER_DEV_SYSTEM_PROMPT}] + list(messages)
+
+    models_to_try = provider_chain(model)
+    last_error: Exception | None = None
+
+    async with httpx.AsyncClient(timeout=120.0) as client:
+        for target_model in models_to_try:
+            provider = _provider_for_model(target_model)
+            key = _get_credential(provider)
+
+            if not key:
+                logger.warning(f"Skipping {provider}/{target_model}: missing API key")
+                last_error = ProviderError(f"Missing API key for provider '{provider}'")
+                continue
+
+            # Strip provider prefix for the actual API call
+            clean_model = (
+                target_model.split("/", 1)[1]
+                if "/" in target_model and provider in ("groq", "cerebras", "gemini")
+                else target_model
+            )
+
+            payload: dict[str, Any] = {
+                "model": clean_model,
+                "messages": messages,
+                "temperature": temperature,
+            }
+            if max_tokens is not None:
+                payload["max_tokens"] = max_tokens
+
+            try:
+                response = await client.post(
+                    _url(provider),
+                    headers=_headers(provider),
+                    json=payload,
+                )
+
+                if response.status_code == 200:
+                    data = response.json()
+                    choices = data.get("choices", [])
+                    if choices and "message" in choices[0]:
+                        msg = choices[0]["message"]
+                        # Handle reasoning tokens separately (gpt-oss models)
+                        content = msg.get("content") or msg.get("reasoning_content", "")
+                        return {
+                            "id": data.get("id", ""),
+                            "model": target_model,
+                            "content": content,
+                            "choices": choices,
+                            "usage": data.get("usage", {}),
+                            "reasoning": msg.get("reasoning_content"),
+                        }
+                    raise ProviderError(f"Invalid payload from {provider}")
+
+                logger.error(
+                    f"Provider {provider} ({clean_model}) HTTP {response.status_code}: {response.text[:200]}"
+                )
+                last_error = ProviderError(f"{provider} HTTP {response.status_code}")
+
+            except httpx.RequestError as exc:
+                logger.error(f"Network error calling {provider}: {exc}")
+                last_error = exc
+
+    raise ProviderError(f"All providers failed. Last error: {last_error}")

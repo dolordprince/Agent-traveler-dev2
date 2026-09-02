@@ -1,32 +1,51 @@
-import express from 'express';
-import path from 'path';
-import fs from 'fs';
-import { fileURLToPath } from 'url';
+import express from "express";
+import { createServer } from "http";
+import { existsSync } from "fs";
+import { fileURLToPath } from "url";
+import { dirname, join } from "path";
+import { createProxyMiddleware } from "http-proxy-middleware";
 
-const __filename = fileURLToPath(import.meta.url);
-const __dirname = path.dirname(__filename);
+const __dirname = dirname(fileURLToPath(import.meta.url));
+const PORT = parseInt(process.env.PORT || "7860", 10);
+const FASTAPI_URL = process.env.FASTAPI_INTERNAL_URL || "http://127.0.0.1:7861";
 
 const app = express();
 
-// Permanent fix for nested iframe WebContainers (Hugging Face / StackBlitz)
+// WebContainer required headers
 app.use((req, res, next) => {
-  res.setHeader('Cross-Origin-Embedder-Policy', 'credentialless');
-  res.setHeader('Cross-Origin-Opener-Policy', 'same-origin');
-  res.setHeader('Access-Control-Allow-Origin', '*');
+  res.setHeader("Cross-Origin-Opener-Policy", "same-origin");
+  res.setHeader("Cross-Origin-Embedder-Policy", "require-corp");
+  res.setHeader("Access-Control-Allow-Origin", "*");
+  res.setHeader("Access-Control-Allow-Methods", "GET,POST,PUT,DELETE,OPTIONS,PATCH");
+  res.setHeader("Access-Control-Allow-Headers", "Content-Type,Authorization");
+  if (req.method === "OPTIONS") return res.sendStatus(204);
   next();
 });
 
-const staticPath = fs.existsSync(path.join(__dirname, 'webcontainer-ui')) 
-  ? path.join(__dirname, 'webcontainer-ui') 
-  : __dirname;
+// Proxy /api and /v1 to FastAPI
+app.use("/api", createProxyMiddleware({
+  target: FASTAPI_URL, changeOrigin: true,
+  on: { error: (err, req, res) => {
+    console.error("[proxy]", err.message);
+    res.status(502).json({ error: "Backend unavailable" });
+  }},
+}));
+app.use("/v1",  createProxyMiddleware({ target: FASTAPI_URL, changeOrigin: true }));
+app.use("/ws",  createProxyMiddleware({ target: FASTAPI_URL, changeOrigin: true, ws: true }));
 
-app.use(express.static(staticPath));
+// Serve UI
+const UI_DIST = join(__dirname, "webcontainer-ui", "dist");
+const UI_ROOT = existsSync(join(UI_DIST, "index.html")) ? UI_DIST
+              : join(__dirname, "webcontainer-ui");
 
-app.get('*', (req, res) => {
-  res.sendFile(path.join(staticPath, 'index.html'));
+console.log(`[server] UI: ${UI_ROOT}`);
+app.use(express.static(UI_ROOT));
+app.get("*", (req, res) => {
+  const idx = join(UI_ROOT, "index.html");
+  existsSync(idx) ? res.sendFile(idx)
+                  : res.status(404).send("Run: cd webcontainer-ui && npm run build");
 });
 
-const PORT = process.env.PORT || 7860;
-app.listen(PORT, () => {
-  console.log(`Server running on port ${PORT} with Credentialless COOP/COEP.`);
+createServer(app).listen(PORT, "0.0.0.0", () => {
+  console.log(`[TRAVELER DEV] http://0.0.0.0:${PORT} → FastAPI ${FASTAPI_URL}`);
 });

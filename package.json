@@ -4,6 +4,7 @@
   "type": "module",
   "main": "server.js",
   "dependencies": {
-    "express": "^4.19.2"
+    "express": "^4.19.2",
+    "http-proxy-middleware": "^4.2.0"
   }
 }

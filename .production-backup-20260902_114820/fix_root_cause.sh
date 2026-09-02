@@ -1,0 +1,186 @@
+#!/usr/bin/env bash
+set -euo pipefail
+
+# Find the target index.html file
+TARGET_HTML="index.html"
+if [ -f "webcontainer-ui/index.html" ]; then
+  TARGET_HTML="webcontainer-ui/index.html"
+fi
+
+echo "=== 1. Injecting UI into $TARGET_HTML ==="
+cat << 'HTMLEOF' > "$TARGET_HTML"
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>TRAVELER.DEV Workspace</title>
+  <style>
+    :root {
+      --bg-dark: #050511;
+      --bg-panel: #0a0b1a;
+      --bg-card: #13142c;
+      --border-neon: rgba(99, 102, 241, 0.2);
+      --accent-blue: #3b82f6;
+      --accent-purple: #8b5cf6;
+      --text-main: #e2e8f0;
+    }
+    body { 
+      margin: 0; 
+      font-family: 'Inter', system-ui, sans-serif; 
+      background: var(--bg-dark); 
+      color: var(--text-main); 
+      height: 100vh; 
+      display: flex; 
+      flex-direction: column; 
+      overflow: hidden; 
+    }
+    .header { 
+      display: flex; 
+      justify-content: space-between; 
+      padding: 12px 20px; 
+      background: rgba(15,23,42,0.9); 
+      border-bottom: 1px solid var(--border-neon); 
+      align-items: center; 
+    }
+    .workspace { 
+      display: flex; 
+      flex: 1; 
+      overflow: hidden; 
+      padding: 12px; 
+      gap: 12px; 
+    }
+    .sidebar, .main-col, .preview-col { 
+      display: flex; 
+      flex-direction: column; 
+      gap: 12px; 
+      background: var(--bg-panel); 
+      border: 1px solid var(--border-neon); 
+      border-radius: 10px; 
+      padding: 15px; 
+    }
+    .sidebar { width: 280px; background: var(--bg-card); }
+    .main-col { flex: 2; }
+    .preview-col { flex: 1; }
+    .panel-title { 
+      font-size: 13px; 
+      color: #a78bfa; 
+      text-transform: uppercase; 
+      font-weight: 700; 
+      letter-spacing: 0.5px;
+      display: flex;
+      align-items: center;
+      gap: 8px;
+    }
+    textarea { 
+      width: 100%; 
+      background: #1e1e38; 
+      color: white; 
+      border: 1px solid rgba(255,255,255,0.1); 
+      padding: 12px; 
+      border-radius: 8px; 
+      box-sizing: border-box; 
+      resize: vertical;
+      font-family: system-ui;
+    }
+    button.primary { 
+      background: linear-gradient(135deg, var(--accent-purple), var(--accent-blue)); 
+      border: none; 
+      color: white; 
+      padding: 10px 16px; 
+      border-radius: 8px; 
+      cursor: pointer; 
+      font-weight: 600; 
+      width: 100%;
+      transition: opacity 0.2s;
+    }
+    button.primary:hover { opacity: 0.9; }
+    .terminal-wrapper { 
+      flex: 1; 
+      background: #000; 
+      border-radius: 8px; 
+      padding: 10px;
+      border: 1px solid rgba(255,255,255,0.05);
+    }
+    iframe { 
+      width: 100%; 
+      flex: 1; 
+      background: white; 
+      border: none; 
+      border-radius: 8px; 
+    }
+    .button-group { display: flex; gap: 8px; }
+    .button-group button { 
+      flex: 1;
+      background: rgba(255,255,255,0.05); 
+      border: 1px solid rgba(255,255,255,0.1); 
+      color: white;
+      padding: 6px 10px;
+      border-radius: 6px;
+      cursor: pointer;
+      font-size: 12px;
+    }
+  </style>
+</head>
+<body>
+  <!-- HEADER -->
+  <div class="header">
+    <div style="font-weight: 800; color: #a78bfa; font-size: 1.2rem; display: flex; align-items: center; gap: 8px;">
+      <span>🪐</span> TRAVELER.DEV
+    </div>
+    <div id="status-container" style="font-size: 12px; background: rgba(34, 197, 94, 0.1); color: #4ade80; padding: 6px 12px; border-radius: 20px; border: 1px solid rgba(34, 197, 94, 0.2);">
+      <span class="status-indicator"></span> WebContainer offline
+    </div>
+  </div>
+
+  <!-- WORKSPACE GRID -->
+  <div class="workspace">
+    <!-- LEFT: AI ASSISTANT -->
+    <div class="sidebar">
+      <div class="panel-title">🤖 AI Assistant</div>
+      <p style="font-size: 13px; color: #94a3b8; margin: 0 0 10px 0;">Describe the real application you want to build.</p>
+      <textarea id="prompt" rows="6" placeholder="e.g., Build a React app with a beautiful dashboard..."></textarea>
+      <button id="build-btn" class="primary" style="margin-top: 15px;">✨ Generate & Build</button>
+      
+      <div class="panel-title" style="margin-top: 30px;">📁 Project</div>
+      <div id="project-status" style="font-size: 13px; color: #94a3b8; background: #1e1e38; padding: 10px; border-radius: 8px;">
+        No project loaded.
+      </div>
+    </div>
+    
+    <!-- CENTER: TERMINAL -->
+    <div class="main-col">
+      <div class="panel-title">⌨️ Terminal</div>
+      <div class="terminal-wrapper" id="terminal">
+        <div style="color: #4ade80; font-family: monospace; font-size: 13px;">Terminal Ready...</div>
+      </div>
+    </div>
+    
+    <!-- RIGHT: PREVIEW -->
+    <div class="preview-col">
+      <div class="panel-title" style="justify-content: space-between;">
+        <span>👁️ HTTP Preview</span>
+        <span style="font-size: 11px; font-weight: normal; color: #94a3b8;">Waiting for application...</span>
+      </div>
+      <div class="button-group">
+        <button id="open-btn">Open</button>
+        <button id="reload-btn">Reload</button>
+        <button id="stop-btn">Stop</button>
+      </div>
+      <iframe id="preview-iframe" src="about:blank"></iframe>
+    </div>
+  </div>
+
+  <script type="module" src="./src/main.js"></script>
+</body>
+</html>
+HTMLEOF
+
+echo "=== 2. Pushing the fix to Hugging Face ==="
+git add "$TARGET_HTML"
+git commit -m "fix(ui): update index.html structure and fix Vite main.js entry path" || true
+
+# If your remote is 'origin' instead of 'hf', replace 'hf' below
+git push origin main --force || git push hf main --force
+
+echo "=== Success! Fix applied and pushed to Hugging Face. Build trigger initialized. ==="
