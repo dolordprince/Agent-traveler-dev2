@@ -3,9 +3,8 @@ title: Traveler Dev Workspace
 emoji: 🪐
 colorFrom: indigo
 colorTo: purple
-sdk: static
+sdk: docker
+app_port: 7860
 pinned: false
-header:
-  Cross-Origin-Embedder-Policy: require-corp
-  Cross-Origin-Opener-Policy: same-origin
+header: default
 ---
