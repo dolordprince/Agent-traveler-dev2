@@ -3,10 +3,9 @@ title: Traveler Dev Workspace
 emoji: 🪐
 colorFrom: indigo
 colorTo: purple
-sdk: docker
-app_port: 7860
+sdk: static
 pinned: false
+header:
+  Cross-Origin-Embedder-Policy: require-corp
+  Cross-Origin-Opener-Policy: same-origin
 ---
-
-# Traveler Dev Workspace
-AI-powered workspace hosted on Hugging Face Spaces.
