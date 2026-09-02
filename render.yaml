@@ -1,11 +1,13 @@
 services:
   - type: web
-    name: openclaw-proxy-gateway
-    env: python
+    name: agent-traveler-dev2
+    runtime: python
     buildCommand: pip install -r requirements.txt
-    startCommand: uvicorn server:app --host 0.0.0.0 --port $PORT
+    startCommand: uvicorn main:app --host 0.0.0.0 --port $PORT
     envVars:
-      - key: TARGET_BACKEND_URL
-        value: https://agent-traveler-dev2.onrender.com
-      - key: WORKSPACE_BASE
-        value: /tmp/claw_workspaces
+      - key: GROQ_API_KEY
+        sync: false
+      - key: PRIMARY_MODEL
+        value: llama3-70b-8192
+      - key: WEBCONTAINER_ENABLED
+        value: "true"
