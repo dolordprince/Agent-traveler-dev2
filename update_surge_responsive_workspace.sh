@@ -1,3 +1,13 @@
+#!/usr/bin/env bash
+set -euo pipefail
+
+TARGET_HTML="index.html"
+if [ -f "webcontainer-ui/index.html" ]; then
+  TARGET_HTML="webcontainer-ui/index.html"
+fi
+
+echo "=== 1. Injecting Fully Responsive Workspace with Surge & PWA to $TARGET_HTML ==="
+cat << 'HTMLEOF' > "$TARGET_HTML"
 <!DOCTYPE html>
 <html lang="en">
 <head>
@@ -303,3 +313,11 @@
   </script>
 </body>
 </html>
+HTMLEOF
+
+echo "=== 2. Pushing to Hugging Face ==="
+git add .
+git commit -m "feat: integrate Surge deployment, Render backend integration, and mobile responsiveness" || true
+git push hf main --force || git push origin main --force
+
+echo "=== Deployment Completed Successfully ==="
