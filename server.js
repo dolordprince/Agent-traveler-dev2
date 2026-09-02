@@ -1,5 +1,6 @@
 import express from 'express';
 import path from 'path';
+import fs from 'fs';
 import { fileURLToPath } from 'url';
 
 const __filename = fileURLToPath(import.meta.url);
@@ -7,14 +8,14 @@ const __dirname = path.dirname(__filename);
 
 const app = express();
 
-// Native Cross-Origin Isolation Headers for WebContainers
+// Cross-Origin Isolation Headers required for WebContainer
 app.use((req, res, next) => {
   res.setHeader('Cross-Origin-Embedder-Policy', 'require-corp');
   res.setHeader('Cross-Origin-Opener-Policy', 'same-origin');
   next();
 });
 
-const staticPath = path.existsSync(path.join(__dirname, 'webcontainer-ui')) 
+const staticPath = fs.existsSync(path.join(__dirname, 'webcontainer-ui')) 
   ? path.join(__dirname, 'webcontainer-ui') 
   : __dirname;
 
