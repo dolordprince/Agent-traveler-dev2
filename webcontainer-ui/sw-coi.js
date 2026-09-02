@@ -10,7 +10,7 @@ self.addEventListener("fetch", (event) => {
       if (response.status === 0) return response;
 
       const newHeaders = new Headers(response.headers);
-      newHeaders.set("Cross-Origin-Embedder-Policy", "require-corp");
+      newHeaders.set("Cross-Origin-Embedder-Policy", "credentialless");
       newHeaders.set("Cross-Origin-Opener-Policy", "same-origin");
 
       return new Response(response.body, {

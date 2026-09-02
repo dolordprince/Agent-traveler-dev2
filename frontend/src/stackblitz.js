@@ -90,7 +90,7 @@ export async function bootWebContainer(projectFiles = {}) {
         throw new Error("Invalid WebContainer API");
       }
 
-      webContainer = await WebContainer.boot();
+      webContainer = await WebContainer.boot({ coep: "credentialless" });
 
       setState({
         status: "ready",
