@@ -125,3 +125,4 @@ html, body { height: 100%; background: var(--bg); color: var(--text); font-famil
   .workspace { flex-direction: column; }
   .panel-chat { height: 50vh; }
 }
+/* cache bust Wed Sep  2 07:30:22 CEST 2026 */
