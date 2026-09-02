@@ -197,7 +197,7 @@ async function getContainer(): Promise<WebContainer> {
     return bootPromise;
   }
 
-  bootPromise = WebContainer.boot();
+  bootPromise = WebContainer.boot({ coep: "credentialless" });
 
   try {
     container = await bootPromise;
