@@ -1,23 +1,16 @@
-FROM python:3.11-slim
+FROM node:22-alpine
 
 WORKDIR /app
 
-# Install Node.js for skill executions
-RUN apt-get update && apt-get install -y --no-install-recommends \
-    curl \
-    nodejs \
-    npm \
-    && rm -rf /var/lib/apt/lists/*
+# Copy root configurations
+COPY package*.json ./
 
-COPY requirements.txt .
-RUN pip install --no-cache-dir -r requirements.txt
-
+# Copy source directory (adjust path if your React app is inside a folder)
 COPY . .
 
-EXPOSE 3456
+# Install dependencies and build static assets
+RUN npm ci || npm install
 
-ENV PORT=3456
-ENV TARGET_BACKEND_URL=https://agent-traveler-dev2.onrender.com
-ENV WORKSPACE_BASE=/tmp/claw_workspaces
+EXPOSE 5173
 
-CMD ["uvicorn", "server:app", "--host", "0.0.0.0", "--port", "3456"]
+CMD ["npm", "run", "dev", "--", "--host", "0.0.0.0", "--port", "5173"]

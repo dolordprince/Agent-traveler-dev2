@@ -1,9 +1,10 @@
 ---
-title: Traveler Dev
+title: Traveler Dev Workspace
 emoji: 🪐
 colorFrom: indigo
 colorTo: purple
-sdk: static
+sdk: docker
+app_port: 5173
 pinned: false
 ---
 
