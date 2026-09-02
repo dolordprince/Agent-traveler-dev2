@@ -1,3 +1,15 @@
+#!/usr/bin/env bash
+set -euo pipefail
+
+TARGET_HTML="index.html"
+if [ -f "webcontainer-ui/index.html" ]; then
+  TARGET_HTML="webcontainer-ui/index.html"
+fi
+
+BASE_DIR="$(dirname "$TARGET_HTML")"
+
+echo "=== 1. Injecting Comprehensive Workspace HTML into $TARGET_HTML ==="
+cat << 'HTMLEOF' > "$TARGET_HTML"
 <!DOCTYPE html>
 <html lang="en">
 <head>
@@ -418,3 +430,12 @@
   </script>
 </body>
 </html>
+HTMLEOF
+
+echo "=== 2. Committing and Pushing to Hugging Face ==="
+git add .
+git commit -m "feat(workspace): expand prompt dock with upload, add preview runner and ZIP export" || true
+
+git push hf main --force || git push origin main --force
+
+echo "=== Success! Complete workspace updated and deployed to Hugging Face. ==="
