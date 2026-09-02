@@ -1,3 +1,38 @@
+#!/usr/bin/env bash
+set -euo pipefail
+
+NEW_REPO_URL="https://github.com/Dolorai/my-notebook-workspace-.git"
+APP_NAME="TRAVELER-DEV"
+
+echo "=== [1/6] Setting up Workspace & Initializing Git for New Repository ==="
+cd /root/Agent-traveler-dev2
+
+# Re-link remote origin to your new repository
+git remote remove origin || true
+git remote add origin "$NEW_REPO_URL"
+
+echo "=== [2/6] Configuring Vite for GitHub Pages Base Path & StackBlitz WebContainer Integration ==="
+# Ensure Vite base path is relative for GitHub Pages static hosting
+cat << 'VITEEOF' > vite.config.js
+import { defineConfig } from 'vite'
+import react from '@vitejs/plugin-react'
+
+export default defineConfig({
+  plugins: [react()],
+  base: './', // Ensures relative assets load on GitHub Pages
+  server: {
+    headers: {
+      'Cross-Origin-Embedder-Policy': 'require-corp',
+      'Cross-Origin-Opener-Policy': 'same-origin'
+    }
+  }
+})
+VITEEOF
+
+echo "=== [3/6] Configuring Frontend UI Component for ${APP_NAME} ==="
+mkdir -p src/components public
+
+cat << 'APPEOF' > src/App.jsx
 import React, { useState, useEffect } from 'react';
 
 export default function App() {
@@ -168,3 +203,71 @@ export default function App() {
     </div>
   );
 }
+APPEOF
+
+echo "=== [4/6] Creating GitHub Actions Deployment Workflow for GitHub Pages ==="
+mkdir -p .github/workflows
+
+cat << 'GHAEOF' > .github/workflows/deploy.yml
+name: Deploy TRAVELER-DEV to GitHub Pages
+
+on:
+  push:
+    branches: ["main", "master"]
+  workflow_dispatch:
+
+permissions:
+  contents: read
+  pages: write
+  id-token: write
+
+concurrency:
+  group: "pages"
+  cancel-in-progress: true
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: 20
+          cache: 'npm'
+
+      - name: Install dependencies
+        run: npm ci || npm install
+
+      - name: Build site
+        run: npm run build
+
+      - name: Upload artifact
+        uses: actions/upload-pages-artifact@v3
+        with:
+          path: './dist'
+
+  deploy:
+    environment:
+      name: github-pages
+      url: ${{ steps.deployment.outputs.page_url }}
+    runs-on: ubuntu-latest
+    needs: build
+    steps:
+      - name: Deploy to GitHub Pages
+        id: deployment
+        uses: actions/deploy-pages@v4
+GHAEOF
+
+echo "=== [5/6] Ensuring Service Worker (.nojekyll) for GitHub Pages ==="
+touch public/.nojekyll
+
+echo "=== [6/6] Committing and Pushing to New Repository ==="
+git branch -M main
+git add .
+git commit -m "feat: setup TRAVELER-DEV notebook workspace with WebContainer API & GitHub Pages action" || echo "Nothing new to commit"
+git push -u origin main --force
+
+echo "=== SUCCESS! Code pushed to https://github.com/Dolorai/my-notebook-workspace-.git ==="
