@@ -1,0 +1,21 @@
+{
+  "short_name": "TRAVELER",
+  "name": "TRAVELER.DEV Workspace",
+  "icons": [
+    {
+      "src": "https://cdn-icons-png.flaticon.com/512/1085/1085710.png",
+      "sizes": "192x192",
+      "type": "image/png"
+    },
+    {
+      "src": "https://cdn-icons-png.flaticon.com/512/1085/1085710.png",
+      "sizes": "512x512",
+      "type": "image/png"
+    }
+  ],
+  "start_url": ".",
+  "background_color": "#050511",
+  "theme_color": "#0b0d1b",
+  "display": "standalone",
+  "orientation": "portrait-primary"
+}

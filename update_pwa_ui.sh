@@ -1,3 +1,57 @@
+#!/usr/bin/env bash
+set -euo pipefail
+
+# Locate the index.html target
+TARGET_HTML="index.html"
+if [ -f "webcontainer-ui/index.html" ]; then
+  TARGET_HTML="webcontainer-ui/index.html"
+fi
+
+BASE_DIR="$(dirname "$TARGET_HTML")"
+
+echo "=== 1. Creating PWA Manifest and Service Worker ==="
+cat << 'MANIFESTEOF' > "$BASE_DIR/manifest.json"
+{
+  "short_name": "TRAVELER",
+  "name": "TRAVELER.DEV Workspace",
+  "icons": [
+    {
+      "src": "https://cdn-icons-png.flaticon.com/512/1085/1085710.png",
+      "sizes": "192x192",
+      "type": "image/png"
+    },
+    {
+      "src": "https://cdn-icons-png.flaticon.com/512/1085/1085710.png",
+      "sizes": "512x512",
+      "type": "image/png"
+    }
+  ],
+  "start_url": ".",
+  "background_color": "#050511",
+  "theme_color": "#0b0d1b",
+  "display": "standalone",
+  "orientation": "portrait-primary"
+}
+MANIFESTEOF
+
+cat << 'SWEOF' > "$BASE_DIR/sw.js"
+const CACHE_NAME = 'traveler-dev-v1';
+
+self.addEventListener('install', (e) => {
+  e.waitUntil(
+    caches.open(CACHE_NAME).then((cache) => cache.addAll(['./']))
+  );
+});
+
+self.addEventListener('fetch', (e) => {
+  e.respondWith(
+    caches.match(e.request).then((res) => res || fetch(e.request))
+  );
+});
+SWEOF
+
+echo "=== 2. Overwriting UI with Integrated Layout in $TARGET_HTML ==="
+cat << 'HTMLEOF' > "$TARGET_HTML"
 <!DOCTYPE html>
 <html lang="en">
 <head>
@@ -255,3 +309,13 @@
   </script>
 </body>
 </html>
+HTMLEOF
+
+echo "=== 3. Pushing changes to Hugging Face ==="
+git add .
+git commit -m "feat(ui): adopt full IDE layout with bottom prompt dock and PWA support" || true
+
+# Push to Hugging Face remote
+git push hf main --force || git push origin main --force
+
+echo "=== Success! Full layout updated and PWA configured. ==="
