@@ -1,3 +1,13 @@
+#!/usr/bin/env bash
+set -euo pipefail
+
+TARGET_HTML="index.html"
+if [ -d "webcontainer-ui" ]; then
+  TARGET_HTML="webcontainer-ui/index.html"
+fi
+
+echo "=== Generating Production WebContainer UI into $TARGET_HTML ==="
+cat << 'HTMLEOF' > "$TARGET_HTML"
 <!DOCTYPE html>
 <html lang="en">
 <head>
@@ -423,3 +433,11 @@ app.listen(port, () => console.log('Server running on port ' + port));`
   </script>
 </body>
 </html>
+HTMLEOF
+
+echo "=== Pushing changes directly to Hugging Face ==="
+git add .
+git commit -m "feat: complete production layout with webcontainer engine and surge support" || true
+git push hf main --force || git push origin main --force
+
+echo "=== Deployment Completed ==="

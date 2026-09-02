@@ -1,11 +1,3 @@
-/*! coi-serviceworker v0.1.7 - Guido Zufolo */
-let coi = {
-  shouldRegister: () => !self.crossOriginIsolated,
-  shouldDeregister: () => false,
-  doCoep: () => true,
-  doCoop: () => true,
-};
-
 if ("undefined" === typeof window) {
   self.addEventListener("install", () => self.skipWaiting());
   self.addEventListener("activate", (e) => e.waitUntil(self.clients.claim()));
@@ -21,14 +13,4 @@ if ("undefined" === typeof window) {
       })
     );
   });
-} else {
-  (() => {
-    const script = document.currentScript;
-    if (coi.shouldRegister()) {
-      navigator.serviceWorker.register(script.src).then((reg) => {
-        reg.addEventListener("updatefound", () => window.location.reload());
-        if (reg.active && !navigator.serviceWorker.controller) window.location.reload();
-      });
-    }
-  })();
 }
