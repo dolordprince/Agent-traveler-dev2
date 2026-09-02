@@ -1,3 +1,42 @@
+#!/usr/bin/env bash
+set -euo pipefail
+
+TARGET_HTML="index.html"
+if [ -f "webcontainer-ui/index.html" ]; then
+  TARGET_HTML="webcontainer-ui/index.html"
+fi
+
+BASE_DIR="$(dirname "$TARGET_HTML")"
+
+echo "=== 1. Injecting Service Worker to enable Cross-Origin Isolation on Hugging Face ==="
+cat << 'SWEOF' > "$BASE_DIR/sw-coi.js"
+// COI Service Worker to inject Cross-Origin Isolation headers inside Hugging Face iframe
+self.addEventListener("install", () => self.skipWaiting());
+self.addEventListener("activate", (event) => event.waitUntil(self.clients.claim()));
+
+self.addEventListener("fetch", (event) => {
+  if (event.request.cache === "only-if-cached" && event.request.mode !== "same-origin") return;
+
+  event.respondWith(
+    fetch(event.request).then((response) => {
+      if (response.status === 0) return response;
+
+      const newHeaders = new Headers(response.headers);
+      newHeaders.set("Cross-Origin-Embedder-Policy", "require-corp");
+      newHeaders.set("Cross-Origin-Opener-Policy", "same-origin");
+
+      return new Response(response.body, {
+        status: response.status,
+        statusText: response.statusText,
+        headers: newHeaders,
+      });
+    }).catch((e) => console.error(e))
+  );
+});
+SWEOF
+
+echo "=== 2. Writing Production UI to $TARGET_HTML ==="
+cat << 'HTMLEOF' > "$TARGET_HTML"
 <!DOCTYPE html>
 <html lang="en">
 <head>
@@ -512,3 +551,11 @@ app.listen(port, () => console.log('Server running on port ' + port));`
   </script>
 </body>
 </html>
+HTMLEOF
+
+echo "=== 3. Pushing directly to Hugging Face remote ==="
+git add .
+git commit -m "fix(coi): add service worker cross-origin isolation for hf, restore layout toggle, upload, and prompt dock" || true
+git push hf main --force || git push origin main --force
+
+echo "=== Deployment Complete ==="
